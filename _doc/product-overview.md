@@ -2,9 +2,10 @@
 
 ## What it is
 **Hangul Roads** is a playable, browser-based **Korean language-learning game** presented as
-a premium **HD-2D side-view JRPG**. It wraps Duolingo-style daily-habit learning inside a
-cinematic 2.5D diorama adventure: pixel-art characters in layered worlds with dramatic
-lighting and atmospheric particles, where **every interaction teaches Korean** — Hangul
+a premium **HD-2D pixel JRPG**. It wraps Duolingo-style daily-habit learning inside a
+cinematic **2.5D diorama adventure**: chibi pixel-art characters explore staged worlds with
+real depth, dramatic lighting, and atmospheric particles, where **every interaction teaches
+Korean** — Hangul
 letters, greetings, vocabulary, and grammar — through quests, NPC dialogue, and
 learning-driven turn-based battles. It is an **original** game (genre homage, not a clone):
 no copyrighted characters, names, logos, story, music, maps, or UI assets are used.
