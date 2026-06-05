@@ -110,11 +110,20 @@ A **premium HD-2D 2.5D pixel diorama**: chibi 2D pixel sprites walking inside st
 miniature 3D-feeling worlds with real depth, atmospheric lighting, soft bloom, vignette,
 parallax, fog, and warm glow. The camera is a **fixed 3/4 diorama view** — angled slightly
 downward, near-orthographic, explicitly **NOT top-down, NOT a side-scroller, and with no
-visible grid or square tiles**. The learner sees a floor plane receding into depth and moves
-in **all four directions**: left/right travels horizontally, while up/down moves *into and
-out of* the scene (with diagonals when two directions combine). A pseudo-3D coordinate system
-(x horizontal, y depth, z elevation for stairs/bridges/raised areas) drives the world, and
-movement uses **organic walkable polygons and blocked collision zones**, never a tile grid.
+visible grid or square tiles**. Exploration is **guided, road-based — not an open plaza**:
+the learner sees **handcrafted roads, paths, stairs, bridges, and village streets** receding
+into depth and walks **only along them**, never across the open ground. They move in **all
+four directions** *within the path*: left/right travels horizontally, while up/down moves
+*into and out of* the scene (with diagonals when two directions combine). A pseudo-3D
+coordinate system (x horizontal, y depth, z elevation for stairs/bridges/raised areas) drives
+the world, and movement is clamped to **organic walkable path polygons** (main road plus side
+branches) and stopped by **blocked collision zones**, never a tile grid. Everything off the
+path — grass, flower beds, water, cliffs, trees, lanterns, walls, roofs, props, and
+background architecture — is **not walkable**, so each area reads like an intentional,
+hand-authored route through a 2.5D stage rather than a decorated open floor. The visible road
+is the only playable surface: it is clearly brighter/more detailed than its surroundings, has
+edges, curves and branches to interaction points (NPCs, Hangul crystals, gates), and is
+framed by non-walkable scenery that guides the eye.
 
 The world stops feeling flat through a stack of depth systems, all mandatory:
 **y-depth sorting** (characters, NPCs, and props render in front of or behind each other by
