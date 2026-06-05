@@ -92,6 +92,36 @@ combat · Guard Shatter · Momentum · mini-boss battle · victory screen · sav
 localStorage · in-engine cutscenes (opening + ending) · game-over flow. Esc menu tabs:
 Party, Inventory, Equipment, Skills, Quests, Settings, Save/Load, Return to Title.
 
+## Emotional north star & player experience
+The guiding feeling is **"lonely, hunted, but destined for something bigger."** Chronicles
+of the Eight Roads is a **premium, melancholic fantasy escape story** where every step feels
+dangerous, every light feels sacred, and every battle makes the player feel like Kael is
+slowly reclaiming his truth. The north star is not "make it look HD-2D" — it is this
+feeling; the HD-2D look is in service of it.
+
+For Kael's **first ten minutes** the player should feel they are not starting an adventure so
+much as running from a world that has already decided they are guilty. The atmosphere stays
+**cold, quiet, and dangerous — yet beautiful and expensive**: snow, candlelight, ruined
+chapel walls, distant mountains, and soft glowing magic that read as nostalgic, mysterious,
+and premium.
+
+The player should feel, in turn: **isolated** at first · **curious** about what really
+happened · **tense** because soldiers and monsters are near · **emotionally attached to
+Kael's innocence** · **powerful** once they understand Guard Shatter · **intrigued** by the
+black sun symbol at the end.
+
+**The emotional arc (the spine of Chapter 1):**
+1. Wake confused.
+2. Realize the world thinks you are a traitor.
+3. Step into a beautiful but hostile snowy world.
+4. Survive your first real fight.
+5. Discover the mystery is bigger than a murder.
+6. End on the feeling: **"I need to know what happens next."**
+
+**Combat must feel tactical but satisfying** — every weakness hit feels smart, and every
+Guard Shatter feels dramatic, like the player *outplayed* the enemy instead of just clicking
+attack.
+
 ## Look, feel & tone
 A **2.5D pixel-art diorama**: 2D pixel sprites in layered worlds with depth, atmospheric
 lighting, soft bloom, vignette, parallax, fog, warm lantern glow, and cinematic camera
