@@ -1,16 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getArea, type AreaId, type NpcDef } from "../data/gameData";
+import { getWorld2D, type Interactable, type WorldNpc, type WorldProp } from "../data/world2d";
 import { useGame } from "../engine/store";
 import { useInput } from "../engine/useInput";
-import { HD2DStage } from "../visual/components/HD2DStage";
-import { PixelSprite } from "../visual/components/PixelSprite";
-import type { SpriteName } from "../visual/pixel/pixelSprites";
 import { sfx } from "../engine/sfx";
+import {
+  project,
+  resolveMove,
+  clamp,
+  dist2,
+  type CameraState,
+} from "../engine/projection";
+import { HD2DWorld } from "../visual/components/HD2DWorld";
+import { PixelChibiSprite, type ChibiState } from "../visual/components/PixelChibiSprite";
+import { BoriCompanion } from "../visual/components/BoriCompanion";
+import { WorldPropSprite } from "../visual/components/WorldPropSprite";
+import { HangulCrystal } from "../visual/components/HangulCrystal";
+import type { ChibiName } from "../visual/pixel/chibiSprites";
 
-const SPEED = 5.0; // px per frame
-const DASH = 1.7;
-const LANE_Y = 0.82; // baseline (feet) fraction
-const PAD = 180;
+const SPEED = 3.1; // world units / frame
+const DASH = 1.75;
+const ARIN_H = 132; // base rendered height (pre depth-scale)
+
+type Facing = "down" | "up" | "left" | "right";
 
 interface ExploreSceneProps {
   area: AreaId;
@@ -21,83 +33,179 @@ interface ExploreSceneProps {
   onExit: (to: AreaId, label: string) => void;
 }
 
-// HD-2D side-view explore: Arin walks left/right along a cinematic pixel lane;
-// the camera pans horizontally; NPCs and glowing letter crystals sit along the
-// lane and are interacted with E. All world art is pixel-art (HD2DStage).
+// HD-2D 2.5D diorama explore: a chibi pixel Arin walks left/right/up/down on a
+// receding floor plane. Entities depth-sort by worldY; Arin renders behind or in
+// front of props; occluders fade when they fully hide her. Camera follows with a
+// dead-zone and pushes in near interactables.
 export function ExploreScene({ area, viewportW, viewportH, paused, onInteractNpc, onExit }: ExploreSceneProps) {
   const game = useGame();
-  const def = getArea(area);
+  const areaDef = getArea(area);
+  const world = useMemo(() => getWorld2D(area), [area]);
+  const completed = game.progress.completedLessons;
 
-  const worldWidth = Math.max(viewportW * 1.9, 1500);
-  const usable = worldWidth - PAD * 2;
-
-  const npcX = useMemo(() => def.npcs.map((n) => PAD + n.atFrac * usable), [def, usable]);
-  const exitX = PAD + 0.92 * usable;
-
-  const posRef = useRef(PAD + 0.08 * usable);
-  const facingRef = useRef<"left" | "right">("right");
-  const movingRef = useRef(false);
-  const camRef = useRef(0);
+  // ── mutable game-loop state (refs so the loop doesn't re-bind) ──────────────
+  const px = useRef(world.spawn.x);
+  const py = useRef(world.spawn.y);
+  const facing = useRef<Facing>("down");
+  const moving = useRef(false);
+  const arinState = useRef<ChibiState>("idle");
+  const cam = useRef<CameraState>({ offsetX: 0, offsetY: 0, zoom: 1, shake: 0 });
+  // Bori delayed-follow position (world space)
+  const boriX = useRef(world.spawn.x - 70);
+  const boriY = useRef(world.spawn.y + 30);
+  // npc patrol progress
+  const patrol = useRef<Record<string, { wp: number; x: number; y: number }>>({});
   const rafRef = useRef(0);
   const [, setTick] = useState(0);
-  const [nearby, setNearby] = useState<{ kind: "npc" | "exit"; idx: number } | null>(null);
+  const [nearby, setNearby] = useState<Interactable | null>(null);
+  const [boriMood, setBoriMood] = useState<"idle" | "happy" | "worried">("idle");
 
+  // base camera offsetY so the floor sits in the lower portion of the viewport
+  const baseOffsetY = useMemo(() => viewportH * 0.30, [viewportH]);
+
+  // ── reset on area change ────────────────────────────────────────────────────
   useEffect(() => {
-    posRef.current = PAD + 0.08 * usable;
-    facingRef.current = "right";
-    camRef.current = clamp(posRef.current - viewportW / 2, 0, Math.max(0, worldWidth - viewportW));
-    setTick((t) => t + 1);
-  }, [area, usable, viewportW, worldWidth]);
-
-  const findNearby = useCallback((): { kind: "npc" | "exit"; idx: number } | null => {
-    const px = posRef.current;
-    type Cand = { kind: "npc" | "exit"; idx: number; d: number };
-    const cands: Cand[] = [];
-    npcX.forEach((x, i) => {
-      const d = Math.abs(x - px);
-      if (d < 90) cands.push({ kind: "npc", idx: i, d });
+    px.current = world.spawn.x;
+    py.current = world.spawn.y;
+    facing.current = "down";
+    boriX.current = world.spawn.x - 70;
+    boriY.current = world.spawn.y + 30;
+    patrol.current = {};
+    world.npcs.forEach((n) => {
+      if (n.patrol) patrol.current[n.def.id] = { wp: 0, x: n.worldX, y: n.worldY };
     });
-    if (def.exitTo) {
-      const d = Math.abs(exitX - px);
-      if (d < 90) cands.push({ kind: "exit", idx: 0, d });
+    cam.current = {
+      offsetX: clamp(world.spawn.x - viewportW / 2, 0, Math.max(0, world.width - viewportW)),
+      offsetY: baseOffsetY,
+      zoom: 1,
+      shake: 0,
+    };
+    setTick((t) => t + 1);
+  }, [area, world, viewportW, baseOffsetY]);
+
+  // ── find nearest interactable to the player ────────────────────────────────
+  const findNearby = useCallback((): Interactable | null => {
+    let best: Interactable | null = null;
+    let bestD = Infinity;
+    for (const it of world.interactables) {
+      const d = dist2(px.current, py.current, it.worldX, it.worldY);
+      if (d < it.radius * it.radius && d < bestD) {
+        bestD = d;
+        best = it;
+      }
     }
-    if (cands.length === 0) return null;
-    const best = cands.reduce((a, b) => (b.d < a.d ? b : a));
-    return { kind: best.kind, idx: best.idx };
-  }, [npcX, exitX, def.exitTo]);
+    return best;
+  }, [world]);
+
+  const triggerInteract = useCallback(() => {
+    if (paused) return;
+    const hit = findNearby();
+    if (!hit) return;
+    sfx("select");
+    if (hit.kind === "exit" && hit.exitTo) {
+      onExit(hit.exitTo, hit.exitLabel ?? "");
+      return;
+    }
+    // resolve the NpcDef behind this interactable
+    const npc = areaDef.npcs.find((n) => n.id === hit.npcId);
+    if (npc) {
+      arinState.current = "cast";
+      setTimeout(() => (arinState.current = "idle"), 400);
+      onInteractNpc(npc);
+    }
+  }, [paused, findNearby, areaDef, onExit, onInteractNpc]);
 
   const input = useInput({
     enabled: !paused,
     onAction: (a) => {
-      if (paused) return;
-      if (a === "interact" || a === "advance") {
-        const hit = findNearby();
-        if (!hit) return;
-        sfx("select");
-        if (hit.kind === "npc") onInteractNpc(def.npcs[hit.idx]);
-        else if (def.exitTo) onExit(def.exitTo, def.exitLabel ?? "");
-      }
+      if (a === "interact" || a === "advance") triggerInteract();
     },
   });
 
+  // ── main loop ───────────────────────────────────────────────────────────────
   useEffect(() => {
     let running = true;
+    const halfW = viewportW / 2;
+    const deadZone = viewportW * 0.18;
+
     function loop() {
-      if (!running) return;
+      if (!running) {
+        return;
+      }
       if (!paused) {
         const inp = input.current;
-        const dir = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
-        movingRef.current = dir !== 0;
-        if (dir !== 0) {
-          facingRef.current = dir > 0 ? "right" : "left";
-          const speed = SPEED * (inp.dash ? DASH : 1);
-          posRef.current = clamp(posRef.current + dir * speed, PAD - 40, worldWidth - PAD + 40);
+        const dxRaw = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+        const dyRaw = (inp.down ? 1 : 0) - (inp.up ? 1 : 0); // down=toward camera=+worldY
+        let dx = dxRaw;
+        let dy = dyRaw;
+        const isMoving = dx !== 0 || dy !== 0;
+        moving.current = isMoving;
+
+        if (isMoving) {
+          // normalize diagonals
+          if (dx !== 0 && dy !== 0) {
+            const inv = 1 / Math.SQRT2;
+            dx *= inv;
+            dy *= inv;
+          }
+          const sp = SPEED * (inp.dash ? DASH : 1);
+          // pick facing: prioritise the dominant axis
+          if (Math.abs(dxRaw) >= Math.abs(dyRaw) && dxRaw !== 0) {
+            facing.current = dxRaw > 0 ? "right" : "left";
+          } else if (dyRaw !== 0) {
+            facing.current = dyRaw > 0 ? "down" : "up";
+          }
+          const res = resolveMove(px.current, py.current, dx * sp, dy * sp, world.walkable, world.blocks);
+          px.current = res.x;
+          py.current = res.y;
+          if (arinState.current === "idle" || arinState.current === "walk") {
+            arinState.current = "walk";
+          }
+        } else if (arinState.current === "walk") {
+          arinState.current = "idle";
         }
-        const target = clamp(posRef.current - viewportW / 2, 0, Math.max(0, worldWidth - viewportW));
-        camRef.current += (target - camRef.current) * 0.12;
-        const n = findNearby();
-        setNearby((prev) => (prev?.kind === n?.kind && prev?.idx === n?.idx ? prev : n));
-        setTick((t) => (t + 1) % 1000000);
+
+        // ── Bori delayed follow (trails behind, offset to player's side) ──────
+        const targetBX = px.current + (facing.current === "right" ? -64 : 64);
+        const targetBY = py.current + 22;
+        boriX.current += (targetBX - boriX.current) * 0.08;
+        boriY.current += (targetBY - boriY.current) * 0.08;
+
+        // ── NPC patrols ──────────────────────────────────────────────────────
+        for (const n of world.npcs) {
+          if (!n.patrol) continue;
+          const st = patrol.current[n.def.id];
+          if (!st) continue;
+          const wp = n.patrol[st.wp];
+          const ddx = wp.x - st.x;
+          const ddy = wp.y - st.y;
+          const d = Math.hypot(ddx, ddy);
+          const psp = n.patrolSpeed ?? 1;
+          if (d < psp + 0.5) {
+            st.wp = (st.wp + 1) % n.patrol.length;
+          } else {
+            st.x += (ddx / d) * psp;
+            st.y += (ddy / d) * psp;
+          }
+        }
+
+        // ── camera follow with dead zone + cinematic push-in ─────────────────
+        const screenPX = px.current - cam.current.offsetX;
+        let targetCamX = cam.current.offsetX;
+        if (screenPX < halfW - deadZone) targetCamX = px.current - (halfW - deadZone);
+        else if (screenPX > halfW + deadZone) targetCamX = px.current - (halfW + deadZone);
+        targetCamX = clamp(targetCamX, 0, Math.max(0, world.width - viewportW));
+
+        const near = findNearby();
+        const targetZoom = near ? 1.06 : 1.0;
+        cam.current.offsetX += (targetCamX - cam.current.offsetX) * 0.1;
+        cam.current.offsetY = baseOffsetY;
+        cam.current.zoom += (targetZoom - cam.current.zoom) * 0.08;
+        cam.current.shake *= 0.85;
+
+        setNearby((prev) => (prev?.id === near?.id ? prev : near ?? null));
+        setBoriMood((m) => (near ? (m === "happy" ? m : "happy") : m === "idle" ? m : "idle"));
+        setTick((t) => (t + 1) % 1_000_000);
       }
       rafRef.current = requestAnimationFrame(loop);
     }
@@ -106,161 +214,223 @@ export function ExploreScene({ area, viewportW, viewportH, paused, onInteractNpc
       running = false;
       cancelAnimationFrame(rafRef.current);
     };
-  }, [area, paused, viewportW, worldWidth, findNearby]);
+  }, [paused, viewportW, viewportH, world, baseOffsetY, findNearby, input]);
 
-  const camX = camRef.current;
-  const completed = game.progress.completedLessons;
+  const c = cam.current;
+
+  // ── build the depth-sorted render list ──────────────────────────────────────
+  type Item = { y: number; z: number; node: React.ReactNode };
+  const items: Item[] = [];
+
+  // player projection (used for occlusion checks)
+  const arinProj = project(px.current, py.current, 0, c);
+
+  // props
+  for (const prop of world.props) {
+    if (prop.kind === "crystal") {
+      items.push({ y: prop.worldY, z: 1, node: renderCrystal(prop, c, completed) });
+      continue;
+    }
+    const proj = project(prop.worldX, prop.worldY, prop.worldZ ?? 0, c);
+    // occlusion fade: if this occluder is in front of Arin AND overlaps her, fade
+    const faded =
+      !!prop.canOcclude &&
+      prop.worldY > py.current && // in front (nearer camera)
+      Math.abs(prop.worldX - px.current) < 60 &&
+      prop.worldY - py.current < 60;
+    items.push({
+      y: prop.worldY,
+      z: 0,
+      node: (
+        <Positioned key={`prop-${prop.id}`} x={proj.screenX} y={proj.screenY} anchor="bottom">
+          <WorldPropSprite prop={prop} visualScale={proj.scale} worldY={prop.worldY} faded={faded} />
+        </Positioned>
+      ),
+    });
+  }
+
+  // NPCs
+  for (const n of world.npcs) {
+    const st = patrol.current[n.def.id];
+    const wx = st ? st.x : n.worldX;
+    const wy = st ? st.y : n.worldY;
+    const proj = project(wx, wy, 0, c);
+    const done = n.def.lessonId ? completed.includes(n.def.lessonId) : false;
+    const sprite = npcSprite(n.def);
+    items.push({
+      y: wy,
+      z: 0,
+      node: (
+        <Positioned key={`npc-${n.def.id}`} x={proj.screenX} y={proj.screenY} anchor="bottom">
+          <div style={{ position: "relative" }}>
+            {nearby?.npcId === n.def.id && <Bubble label={done ? "✓" : "!"} />}
+            <PixelChibiSprite
+              name={sprite}
+              facing={facingTo(wx, wy, px.current, py.current)}
+              moving={!!st}
+              height={ARIN_H * 0.92 * proj.scale}
+              worldY={wy}
+              glowColor={done ? "rgba(110,231,183,0.6)" : undefined}
+            />
+          </div>
+        </Positioned>
+      ),
+    });
+  }
+
+  // Bori
+  {
+    const proj = project(boriX.current, boriY.current, 26, c);
+    items.push({
+      y: boriY.current,
+      z: 0,
+      node: (
+        <Positioned key="bori" x={proj.screenX} y={proj.screenY} anchor="bottom">
+          <BoriCompanion height={56 * proj.scale} mood={boriMood} facing={facing.current === "right" ? "left" : "right"} />
+        </Positioned>
+      ),
+    });
+  }
+
+  // Arin
+  items.push({
+    y: py.current,
+    z: 1,
+    node: (
+      <Positioned key="arin" x={arinProj.screenX} y={arinProj.screenY} anchor="bottom">
+        <PixelChibiSprite
+          name="arin"
+          facing={facing.current}
+          moving={moving.current && !paused}
+          height={ARIN_H * arinProj.scale}
+          worldY={py.current}
+          state={arinState.current}
+        />
+      </Positioned>
+    ),
+  });
+
+  // sort by depth (worldY); ties broken by z (sub-layer)
+  items.sort((a, b) => a.y - b.y || a.z - b.z);
 
   return (
     <div className="absolute inset-0 overflow-hidden">
-      <HD2DStage
-        theme={def.theme}
-        camX={camX}
-        worldWidth={worldWidth}
-        viewportW={viewportW}
-        viewportH={viewportH}
-        laneFrac={LANE_Y}
-      >
-        {/* NPCs / lesson crystals */}
-        {def.npcs.map((n, i) => {
-          const isLessonDone = n.lessonId ? completed.includes(n.lessonId) : false;
-          return (
-            <NpcActor
-              key={n.id}
-              npc={n}
-              worldX={npcX[i]}
-              viewportH={viewportH}
-              highlight={nearby?.kind === "npc" && nearby.idx === i}
-              done={isLessonDone}
-            />
-          );
-        })}
-
-        {/* exit gate marker (pixel torii arch) */}
-        {def.exitTo && (
-          <div
-            style={{ position: "absolute", left: exitX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}
-          >
-            <div className="coer-bob flex flex-col items-center" style={{ filter: "drop-shadow(0 0 14px rgba(255,220,140,0.6))" }}>
-              <PixelGate />
-              <div className="mt-1 px-2 py-0.5 bg-black/65 border border-[rgba(216,178,90,0.5)] text-[11px] text-[#e9cf86] whitespace-nowrap">
-                → {def.exitLabel}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* player */}
-        <div style={{ position: "absolute", left: posRef.current, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 20 }}>
-          <PixelSprite name="arin" height={150} facing={facingRef.current} moving={movingRef.current && !paused} />
-        </div>
-      </HD2DStage>
+      <HD2DWorld world={world} cam={c} viewportW={viewportW} viewportH={viewportH}>
+        {items.map((it) => it.node)}
+      </HD2DWorld>
 
       {/* interaction prompt */}
       {nearby && !paused && (
-        <div className="coer-fade-in absolute z-40" style={{ bottom: 70, left: "50%", transform: "translateX(-50%)" }}>
-          <div className="px-3 py-1.5 border-2 border-[rgba(216,178,90,0.5)] bg-black/70 text-xs text-[#e9cf86] flex items-center gap-2">
+        <div className="coer-fade-in absolute z-40" style={{ bottom: 64, left: "50%", transform: "translateX(-50%)" }}>
+          <div className="px-3 py-1.5 border-2 border-[rgba(216,178,90,0.55)] bg-black/72 text-xs text-[#e9cf86] flex items-center gap-2 rounded-sm" style={{ boxShadow: "0 0 14px rgba(216,178,90,0.25)" }}>
             <kbd className="px-1.5 py-0.5 border border-[rgba(216,178,90,0.4)] bg-black/50 font-mono text-[10px]">E</kbd>
-            {nearby.kind === "npc"
-              ? `${def.npcs[nearby.idx].lessonId && completed.includes(def.npcs[nearby.idx].lessonId!) ? "Talk again to" : "Talk to"} ${def.npcs[nearby.idx].name}`
-              : `Travel to ${def.exitLabel}`}
+            {nearby.label}
           </div>
+        </div>
+      )}
+
+      {/* movement hint */}
+      {!paused && (
+        <div className="absolute z-30 text-[10px] text-[#e9cf86]/55" style={{ bottom: 12, left: 14 }}>
+          WASD / arrows to move · Shift dash · E interact
         </div>
       )}
     </div>
   );
 }
 
-function NpcActor({
-  npc,
-  worldX,
-  viewportH,
-  highlight,
-  done,
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function Positioned({
+  x,
+  y,
+  anchor,
+  children,
 }: {
-  npc: NpcDef;
-  worldX: number;
-  viewportH: number;
-  highlight: boolean;
-  done: boolean;
+  x: number;
+  y: number;
+  anchor: "bottom";
+  children: React.ReactNode;
 }) {
-  const isLetter = npc.id.startsWith("letter-") || npc.id === "stone-tablet";
-  if (isLetter) {
-    const char = npc.id === "letter-a" ? "ㅏ" : npc.id === "letter-eo" ? "ㅓ" : "가";
-    return (
-      <div style={{ position: "absolute", left: worldX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}>
-        {highlight && <Pointer />}
-        <div className="flex flex-col items-center">
-          {/* floating glowing Hangul lesson crystal */}
-          <div
-            className="coer-crystal"
-            style={{
-              fontSize: 56,
-              color: done ? "#9ff0c8" : "#ffe9a8",
-              textShadow: `0 0 22px ${done ? "rgba(110,231,183,0.8)" : "rgba(255,220,140,0.95)"}`,
-            }}
-          >
-            {char}
-          </div>
-          {/* crystal pedestal */}
-          <div style={{ width: 30, height: 10, background: "linear-gradient(180deg,#9a8460,#5a4a36)", border: "2px solid #3a2e22", marginTop: -4 }} />
-          {done && <div className="text-emerald-300 text-xs mt-0.5">✓ learned</div>}
-        </div>
-      </div>
-    );
-  }
-
-  const sprite: SpriteName =
-    npc.sprite === "bori" ? "bori"
-    : npc.sprite === "shopkeeper" ? "shopkeeper"
-    : npc.sprite === "guard" ? "guard"
-    : npc.sprite === "child" ? "child"
-    : "elder";
-
   return (
-    <div style={{ position: "absolute", left: worldX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}>
-      {highlight && <Pointer />}
-      <div className="flex flex-col items-center">
-        <PixelSprite name={sprite} height={130} facing="left" hover={npc.sprite === "bori"} glow={npc.sprite === "bori"} />
-        {done && <div className="text-emerald-300 text-[11px] -mt-1">✓</div>}
-      </div>
+    <div
+      style={{
+        position: "absolute",
+        left: x,
+        top: y,
+        transform: anchor === "bottom" ? "translate(-50%,-100%)" : "translate(-50%,-50%)",
+      }}
+    >
+      {children}
     </div>
   );
 }
 
-// Small pixel torii-style gate marker.
-function PixelGate() {
+function renderCrystal(prop: WorldProp, cam: CameraState, completed: string[]) {
+  const proj = project(prop.worldX, prop.worldY, prop.worldZ ?? 0, cam);
+  // map crystal id → lesson done state via interactable's lesson
+  const done =
+    (prop.id === "crystal-a" && completed.includes("l1")) ||
+    (prop.id === "crystal-eo" && completed.includes("l2"));
+  const broken = prop.glyphColor === "#b9a8e8" || prop.glyphColor === "#caa8ff";
   return (
-    <div style={{ position: "relative", width: 54, height: 56 }}>
-      <div style={{ position: "absolute", left: 4, top: 12, width: 8, height: 44, background: "#9a8460", border: "2px solid #5a4a36" }} />
-      <div style={{ position: "absolute", right: 4, top: 12, width: 8, height: 44, background: "#9a8460", border: "2px solid #5a4a36" }} />
-      <div style={{ position: "absolute", left: -2, top: 4, width: 58, height: 8, background: "#7a6a52", border: "2px solid #5a4a36" }} />
-      <div style={{ position: "absolute", left: 4, top: 16, width: 46, height: 5, background: "#caa24e" }} />
-    </div>
+    <Positioned key={`crystal-${prop.id}`} x={proj.screenX} y={proj.screenY} anchor="bottom">
+      <HangulCrystal
+        glyph={prop.glyph ?? "?"}
+        color={prop.glyphColor ?? "#9fe8ff"}
+        size={Math.round(54 * proj.scale)}
+        done={done}
+        broken={broken}
+      />
+    </Positioned>
   );
 }
 
-function Pointer() {
+function Bubble({ label }: { label: string }) {
   return (
     <div
       className="coer-blink"
       style={{
         position: "absolute",
+        top: -22,
         left: "50%",
-        top: -18,
         transform: "translateX(-50%)",
-        width: 0,
-        height: 0,
-        borderLeft: "8px solid transparent",
-        borderRight: "8px solid transparent",
-        borderTop: "11px solid #e9cf86",
-        filter: "drop-shadow(0 0 6px rgba(233,207,134,0.8))",
-        zIndex: 30,
+        width: 18,
+        height: 18,
+        borderRadius: "50%",
+        background: "rgba(0,0,0,0.7)",
+        border: "1px solid rgba(216,178,90,0.6)",
+        color: "#ffe6a8",
+        fontSize: 11,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: "0 0 8px rgba(216,178,90,0.5)",
       }}
-    />
+    >
+      {label}
+    </div>
   );
 }
 
-function clamp(v: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, v));
+function npcSprite(def: NpcDef): ChibiName {
+  switch (def.sprite) {
+    case "shopkeeper":
+      return "shopkeeper";
+    case "guard":
+      return "guard";
+    case "child":
+      return "child";
+    default:
+      return "elder";
+  }
+}
+
+// face an NPC toward the player when close, else keep down
+function facingTo(nx: number, ny: number, pxv: number, pyv: number): Facing {
+  if (dist2(nx, ny, pxv, pyv) > 200 * 200) return "down";
+  const dx = pxv - nx;
+  const dy = pyv - ny;
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "right" : "left";
+  return dy > 0 ? "down" : "up";
 }

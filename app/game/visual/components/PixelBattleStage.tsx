@@ -3,8 +3,7 @@ import { getEnemy, type EnemyDef, type AreaTheme } from "../../data/gameData";
 import { getQuestion, getVocab, XP } from "../../data/learningData";
 import { useGame } from "../../engine/store";
 import { sfx } from "../../engine/sfx";
-import { HD2DStage } from "./HD2DStage";
-import { PixelSprite } from "./PixelSprite";
+import { BattleDiorama } from "./BattleDiorama";
 import { PixelFrame } from "./PixelFrame";
 import { PixelCommandButtons } from "./PixelCommandButtons";
 import { FluencyComboMeter } from "./FluencyComboMeter";
@@ -65,6 +64,8 @@ export function PixelBattleStage({ enemyId, theme, viewportW, viewportH, onEnd }
   const [showBreak, setShowBreak] = useState(false);
   const [slash, setSlash] = useState(0);
   const [arinCast, setArinCast] = useState(false);
+  const [arinFlinch, setArinFlinch] = useState(false);
+  const [enemyHurt, setEnemyHurt] = useState(false);
   const [correctTotal, setCorrectTotal] = useState(0);
   const [xpTotal, setXpTotal] = useState(0);
   const [usedHint, setUsedHint] = useState(false);
@@ -156,6 +157,8 @@ export function PixelBattleStage({ enemyId, theme, viewportW, viewportH, onEnd }
       const vocab = q.vocabId ? getVocab(q.vocabId) : undefined;
       setGlowWord(vocab?.korean ?? q.answer);
       setArinCast(true);
+      setEnemyHurt(true);
+      window.setTimeout(() => setEnemyHurt(false), 320);
       setSlash((s) => s + 1);
       floatId.current += 1;
       setFloatDmg({ id: floatId.current, n: dmg, crit });
@@ -172,6 +175,8 @@ export function PixelBattleStage({ enemyId, theme, viewportW, viewportH, onEnd }
       }, 900);
     } else {
       sfx("error");
+      setArinFlinch(true);
+      window.setTimeout(() => setArinFlinch(false), 460);
       setCombo(0);
       setCorrectRun(0);
       if (enemy.isBoss && shield < enemy.confusionShield) {
@@ -230,8 +235,6 @@ export function PixelBattleStage({ enemyId, theme, viewportW, viewportH, onEnd }
     window.setTimeout(() => onEnd(false, { correct: correctTotal, xp: xpTotal }), 600);
   }
 
-  const worldWidth = Math.max(viewportW * 1.05, 1000);
-  const laneFrac = 0.74;
   const vocabHint = currentQ.vocabId ? getVocab(currentQ.vocabId) : undefined;
 
   const commands: { id: Command; label: string; desc: string }[] = [
@@ -246,44 +249,19 @@ export function PixelBattleStage({ enemyId, theme, viewportW, viewportH, onEnd }
   return (
     <div className="absolute inset-0 overflow-hidden">
       <div className={shake ? "coer-shake absolute inset-0" : "absolute inset-0"} key={`shk-${shake}`}>
-        <HD2DStage
+        <BattleDiorama
           theme={theme}
-          camX={0}
-          worldWidth={worldWidth}
           viewportW={viewportW}
           viewportH={viewportH}
-          laneFrac={laneFrac}
-        >
-          {/* Arin + Bori on the left */}
-          <div style={{ position: "absolute", left: worldWidth * 0.22, top: laneFrac * viewportH, transform: "translate(-50%,-100%)", zIndex: 22 }}>
-            <div className={arinCast ? "coer-cast" : undefined}>
-              <PixelSprite name="arin" height={150} facing="right" glow={arinCast} />
-            </div>
-            {glowWord && (
-              <div className="coer-dmg absolute" style={{ left: "50%", top: -70, transform: "translateX(-50%)", color: "#ffe9a8", fontSize: 26, textShadow: "0 0 16px rgba(255,220,140,0.9)", whiteSpace: "nowrap" }}>
-                {glowWord}
-              </div>
-            )}
-          </div>
-          <div style={{ position: "absolute", left: worldWidth * 0.13, top: laneFrac * viewportH - 20, transform: "translate(-50%,-100%)", zIndex: 21 }}>
-            <PixelSprite name="bori" height={84} facing="right" glow hover />
-          </div>
-
-          {/* enemy right */}
-          <div style={{ position: "absolute", left: worldWidth * 0.78, top: laneFrac * viewportH, transform: "translate(-50%,-100%)", zIndex: 22 }}>
-            <div className={meaningBreak ? "opacity-60" : ""}>
-              <PixelSprite name="wisp" height={150} facing="left" hover glow />
-            </div>
-            {slash > 0 && (
-              <div key={`sl-${slash}`} className="coer-slash absolute" style={{ left: "10%", top: "20%", width: 70, height: 6, background: "linear-gradient(90deg,transparent,#fff3c4,transparent)", boxShadow: "0 0 14px rgba(255,240,180,0.9)" }} />
-            )}
-            {floatDmg && (
-              <div key={floatDmg.id} className="coer-dmg absolute" style={{ left: "50%", top: -40, transform: "translateX(-50%)", color: floatDmg.crit ? "#ffd86a" : "#ff8a8a", fontSize: floatDmg.crit ? 34 : 26, fontWeight: 700, textShadow: "0 0 12px rgba(0,0,0,0.7)" }}>
-                {floatDmg.n}
-              </div>
-            )}
-          </div>
-        </HD2DStage>
+          arinCast={arinCast}
+          arinFlinch={arinFlinch}
+          enemyDazed={meaningBreak}
+          enemyHurt={enemyHurt}
+          glowWord={glowWord}
+          floatDmg={floatDmg}
+          slash={slash}
+          boriMood={arinFlinch ? "worried" : arinCast ? "happy" : "idle"}
+        />
 
         {/* battle entry flash */}
         <div className="coer-battle-flash absolute inset-0 bg-violet-300/30 pointer-events-none" style={{ zIndex: 25 }} />
