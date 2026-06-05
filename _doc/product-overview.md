@@ -104,15 +104,39 @@ feel exist to make learning feel rewarding and habit-forming.
 6. End on the feeling: **"I want to keep my streak going tomorrow."**
 
 ## Look, feel & tone
-A **premium HD-2D side-view diorama**: 2D pixel sprites in layered worlds with depth,
-atmospheric lighting, soft bloom, vignette, parallax, and warm glow. The view is a
-**cinematic side-view / slight 3/4 diorama** (explicitly NOT top-down, no visible grid): the
-player stands upright on a horizontal walkable path and moves left/right across each scene,
-with the camera following horizontally. Every area fills the **16:9 viewport** with layered
-planes (far background, background architecture, midground walkable layer, foreground
-framing, atmosphere layer). **Battles are HD-2D side-view too** — player on the left/lower
-area, the Silence Wisp on the right, staged on the current scene transformed into a
-cinematic battle backdrop with hit flashes, screen shake, and slight zoom on big hits.
+A **premium HD-2D 2.5D pixel diorama**: chibi 2D pixel sprites walking inside staged,
+miniature 3D-feeling worlds with real depth, atmospheric lighting, soft bloom, vignette,
+parallax, fog, and warm glow. The camera is a **fixed 3/4 diorama view** — angled slightly
+downward, near-orthographic, explicitly **NOT top-down, NOT a side-scroller, and with no
+visible grid or square tiles**. The learner sees a floor plane receding into depth and moves
+in **all four directions**: left/right travels horizontally, while up/down moves *into and
+out of* the scene (with diagonals when two directions combine). A pseudo-3D coordinate system
+(x horizontal, y depth, z elevation for stairs/bridges/raised areas) drives the world, and
+movement uses **organic walkable polygons and blocked collision zones**, never a tile grid.
+
+The world stops feeling flat through a stack of depth systems, all mandatory:
+**y-depth sorting** (characters, NPCs, and props render in front of or behind each other by
+depth — Arin walks behind a lantern and is partly covered, or in front of a tablet and
+covers it), **foreground occlusion** (trees, roof edges, pillars, stall cloth, tall grass
+partly cover the player), **multi-layer parallax** (far sky → deep background architecture →
+midground props → walkable ground → foreground occluders → lighting/atmosphere), **slight
+scale-by-depth** (Arin shrinks moving deeper, grows moving toward camera), **ground and soft
+contact shadows**, **fog at multiple depths**, **bloom around lights**, and a
+**vignette / depth-of-field** finish. Each area fills the **16:9 viewport** as a spatial
+stage, not a flat illustration, and the **camera smoothly follows Arin** (stronger
+horizontally, with a dead zone, never showing empty space past the map edges, and pushing in
+for key moments like the Silent Gate battle trigger).
+
+The characters are **chibi pixel humans** — short proportions, big readable heads, simple
+expressive pixel faces — with **4-direction walk and idle animations** (toward camera, away,
+left, right), feet shadows, and depth sorting. Arin is a tiny traveler with a cloak, satchel,
+and glowing notebook; NPCs share the chibi style with distinct outfits and some walk set path
+routes; **Bori** is a small floating fox-spirit companion with a tail flame and glow who
+trails Arin with a slight delay and is depth-sorted into the scene. **Battles are an HD-2D
+2.5D combat stage too** — Arin on the left-mid foreground with Bori beside, the Silence Wisp
+on the right-mid background, a ground plane with real depth, foreground objects framing the
+shot, and the current area blurred behind — with hit flashes, screen shake, and a Meaning
+Break burst of light when the enemy's Confusion Shield breaks.
 
 **UI direction:** a clean, premium shell around a centered **16:9 viewport**, with clear,
 highly readable Korean and romanization, gentle glow highlights, smooth transitions, and
