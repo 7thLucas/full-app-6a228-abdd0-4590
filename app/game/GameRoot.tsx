@@ -5,12 +5,12 @@ import { getArea, type AreaId, type NpcDef } from "./data/gameData";
 import { getLesson, type LessonNode } from "./data/learningData";
 import { MainMenu } from "./scenes/MainMenu";
 import { OnboardingScreen } from "./scenes/OnboardingScreen";
-import { LearningMap } from "./scenes/LearningMap";
+import { PixelWorldMap } from "./visual/components/PixelWorldMap";
 import { ExploreScene } from "./scenes/ExploreScene";
-import { BattleScene } from "./scenes/BattleScene";
+import { PixelBattleStage } from "./visual/components/PixelBattleStage";
 import { LessonCompleteScreen } from "./scenes/LessonCompleteScreen";
 import { StreakScreen } from "./scenes/StreakScreen";
-import { Wordbook } from "./scenes/Wordbook";
+import { MagicalWordbook } from "./visual/components/MagicalWordbook";
 import { ReviewScreen } from "./scenes/ReviewScreen";
 import { QuestJournal } from "./scenes/QuestJournal";
 import { ShopScreen } from "./scenes/ShopScreen";
@@ -18,8 +18,8 @@ import { SettingsScreen } from "./scenes/SettingsScreen";
 import { DailyQuestScreen } from "./scenes/DailyQuestScreen";
 import { CharacterScreen } from "./scenes/CharacterScreen";
 import { EndingScreen } from "./scenes/EndingScreen";
-import { DialogueBox, type DialogueLine } from "./ui/DialogueBox";
-import { LessonPanel, type LessonResult } from "./ui/LessonPanel";
+import { PixelDialogueBox, type DialogueLine } from "./visual/components/PixelDialogueBox";
+import { PixelLessonPanel, type LessonResult } from "./visual/components/PixelLessonPanel";
 import { Hud } from "./ui/Hud";
 import { PauseMenu } from "./ui/PauseMenu";
 
@@ -328,13 +328,13 @@ function Router({ vpW, vpH }: { vpW: number; vpH: number }) {
   }
 
   if (screen === "map") {
-    return <LearningMap onPickLesson={(l) => startLesson(l)} onClose={() => setScreen("explore")} />;
+    return <PixelWorldMap onPickLesson={(l) => startLesson(l)} onClose={() => setScreen("explore")} />;
   }
 
   if (screen === "battle" && battle) {
     const area = getArea(progress.currentArea);
     return (
-      <BattleScene
+      <PixelBattleStage
         key={battle.enemyId}
         enemyId={battle.enemyId}
         theme={area.theme}
@@ -390,7 +390,7 @@ function Router({ vpW, vpH }: { vpW: number; vpH: number }) {
     // when coming straight from main menu without a started game, go to menu
   };
 
-  if (screen === "wordbook") return <Wordbook onClose={() => setScreen("explore")} />;
+  if (screen === "wordbook") return <MagicalWordbook onClose={() => setScreen("explore")} />;
   if (screen === "review") return <ReviewScreen onClose={menuBack} />;
   if (screen === "quests") return <QuestJournal onClose={() => setScreen("explore")} />;
   if (screen === "character") return <CharacterScreen onClose={() => setScreen("explore")} />;
@@ -415,7 +415,7 @@ function Router({ vpW, vpH }: { vpW: number; vpH: number }) {
       <Hud areaName={area.name} goal={area.goal} />
 
       {overlay?.kind === "dialogue" && (
-        <DialogueBox
+        <PixelDialogueBox
           lines={overlay.lines}
           textSpeed={game.settings.textSpeed}
           onComplete={() => {
@@ -427,7 +427,7 @@ function Router({ vpW, vpH }: { vpW: number; vpH: number }) {
       )}
 
       {overlay?.kind === "lesson" && (
-        <LessonPanel
+        <PixelLessonPanel
           lesson={overlay.lesson}
           onComplete={onLessonComplete}
           onAbort={() => setOverlay(null)}

@@ -1,4 +1,4 @@
-import type { LessonResult } from "../ui/LessonPanel";
+import type { LessonResult } from "../visual/components/PixelLessonPanel";
 import { getVocab } from "../data/learningData";
 import { useGame } from "../engine/store";
 import { Panel, Heading, GoldButton } from "../ui/primitives";
@@ -28,7 +28,7 @@ export function LessonCompleteScreen({ result, streak, onContinue, onReview, onM
         {result.failed ? (
           <p className="text-sm text-[#bfb59c] mb-4">You ran out of hearts — no shame, traveler. Try again when ready.</p>
         ) : (
-          <p className="text-sm text-[#ffd98a] mb-4">🦊 Bori: That was wonderful. The letters shine brighter now.</p>
+          <p className="text-sm text-[#ffd98a] mb-4">Bori: That was wonderful. The letters shine brighter now.</p>
         )}
 
         {words.length > 0 && (
@@ -54,7 +54,10 @@ export function LessonCompleteScreen({ result, streak, onContinue, onReview, onM
 
         {!result.failed && (
           <div className="mb-4 rounded border border-amber-500/40 bg-amber-900/15 p-2.5 flex items-center justify-center gap-2">
-            <span className="text-xl">🔥</span>
+            <span
+              className="coer-flicker inline-block"
+              style={{ width: 14, height: 18, borderRadius: "50% 50% 50% 50% / 70% 70% 40% 40%", background: "radial-gradient(circle at 50% 70%,#fff3c0,#ffb84a 45%,#ff6a3c 75%,transparent)" }}
+            />
             <span className="text-sm text-amber-200">Memory Flame: Day {streak} streak alive</span>
           </div>
         )}

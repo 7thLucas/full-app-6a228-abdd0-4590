@@ -71,7 +71,7 @@ export function StreakScreen({ onContinue, onClose }: Props) {
                     : "border-[rgba(216,178,90,0.25)] bg-black/30 text-[#555]"
                 }`}
               >
-                {progress.weekDays[i] ? "🔥" : "·"}
+                {progress.weekDays[i] ? "✦" : "·"}
               </div>
             </div>
           ))}

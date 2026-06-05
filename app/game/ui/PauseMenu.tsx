@@ -10,13 +10,13 @@ interface PauseMenuProps {
 }
 
 const TABS: { label: string; screen: Screen; icon: string }[] = [
-  { label: "Learn Path", screen: "map", icon: "🗺️" },
-  { label: "Wordbook", screen: "wordbook", icon: "📖" },
-  { label: "Quests", screen: "quests", icon: "📜" },
-  { label: "Review", screen: "review", icon: "🔁" },
-  { label: "Character", screen: "character", icon: "🧭" },
-  { label: "Shop", screen: "shop", icon: "🏮" },
-  { label: "Settings", screen: "settings", icon: "⚙️" },
+  { label: "Learn Path", screen: "map", icon: "◈" },
+  { label: "Wordbook", screen: "wordbook", icon: "❖" },
+  { label: "Quests", screen: "quests", icon: "✦" },
+  { label: "Review", screen: "review", icon: "↻" },
+  { label: "Character", screen: "character", icon: "✧" },
+  { label: "Shop", screen: "shop", icon: "❂" },
+  { label: "Settings", screen: "settings", icon: "⚙" },
 ];
 
 // ESC pause menu with all the game's tabs.
@@ -51,7 +51,7 @@ export function PauseMenu({ onResume, onOpen, onSave, onTitle }: PauseMenuProps)
             }}
             className="flex-1 rounded border border-[rgba(216,178,90,0.4)] px-3 py-2 text-sm text-[#ece6d6] hover:border-[#e9cf86] hover:text-[#e9cf86]"
           >
-            💾 Save
+            ◆ Save
           </button>
           <button
             type="button"

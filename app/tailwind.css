@@ -381,6 +381,29 @@ body {
 }
 .coer-sway { animation: coer-sway 3s ease-in-out infinite; }
 
+/* Meaning Break: Hangul letters burst outward from center */
+@keyframes coer-meaning-burst {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(var(--bx), var(--by)) scale(1.2); opacity: 0; }
+}
+
+/* Arin spell-cast lunge on a correct answer */
+@keyframes coer-cast {
+  0% { transform: translateX(0) scale(1); }
+  40% { transform: translateX(10px) scale(1.05); }
+  60% { transform: translateX(14px) scale(1.05); }
+  100% { transform: translateX(0) scale(1); }
+}
+.coer-cast { animation: coer-cast 0.5s ease-out; }
+
+/* Letter crystal pulse for shrine interactables */
+@keyframes coer-crystal {
+  0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 10px rgba(255,220,140,0.6)); }
+  50% { transform: translateY(-5px); filter: drop-shadow(0 0 22px rgba(255,220,140,0.95)); }
+}
+.coer-crystal { animation: coer-crystal 2.4s ease-in-out infinite; }
+
 .coer-scroll::-webkit-scrollbar { display: block; width: 6px; }
 .coer-scroll::-webkit-scrollbar-thumb { background: rgba(216, 178, 90, 0.4); border-radius: 3px; }
 .coer-scroll::-webkit-scrollbar-track { background: transparent; }

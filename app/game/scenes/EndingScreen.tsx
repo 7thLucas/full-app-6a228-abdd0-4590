@@ -27,7 +27,7 @@ export function EndingScreen({ onReturn }: { onReturn: () => void }) {
           and you spoke them yourself.
         </p>
         <p className="text-sm text-[#ffd98a] mb-4">
-          🦊 Bori: You did it, {progress.learnerName}! You read Hangul, greeted a village, and won your first
+          Bori: You did it, {progress.learnerName}! You read Hangul, greeted a village, and won your first
           battle with Korean. The Market of Words awaits beyond the gate.
         </p>
 
@@ -38,7 +38,13 @@ export function EndingScreen({ onReturn }: { onReturn: () => void }) {
         </div>
 
         <div className="mb-4 rounded border border-amber-500/40 bg-amber-900/15 p-3">
-          <div className="text-amber-200 text-sm">🔥 Memory Flame · Day {progress.streak}</div>
+          <div className="text-amber-200 text-sm flex items-center justify-center gap-1.5">
+            <span
+              className="coer-flicker inline-block"
+              style={{ width: 12, height: 16, borderRadius: "50% 50% 50% 50% / 70% 70% 40% 40%", background: "radial-gradient(circle at 50% 70%,#fff3c0,#ffb84a 45%,#ff6a3c 75%,transparent)" }}
+            />
+            Memory Flame · Day {progress.streak}
+          </div>
           <div className="text-[13px] text-[#ece6d6] mt-1">Continue your journey tomorrow to keep it alive.</div>
         </div>
 

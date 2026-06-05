@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getArea, type AreaId, type NpcDef } from "../data/gameData";
 import { useGame } from "../engine/store";
 import { useInput } from "../engine/useInput";
-import { PixelCharacter } from "../visual/PixelCharacter";
-import { Diorama } from "../visual/Diorama";
-import { Atmosphere } from "../visual/Atmosphere";
-import { Sprite, type SpriteKind } from "../visual/Sprite";
+import { HD2DStage } from "../visual/components/HD2DStage";
+import { PixelSprite } from "../visual/components/PixelSprite";
+import type { SpriteName } from "../visual/pixel/pixelSprites";
 import { sfx } from "../engine/sfx";
 
 const SPEED = 5.0; // px per frame
@@ -22,17 +21,16 @@ interface ExploreSceneProps {
   onExit: (to: AreaId, label: string) => void;
 }
 
-// HD-2D side-view explore: Arin walks left/right along a cinematic lane; the
-// camera pans horizontally; NPCs sit along the lane and are interacted with E.
+// HD-2D side-view explore: Arin walks left/right along a cinematic pixel lane;
+// the camera pans horizontally; NPCs and glowing letter crystals sit along the
+// lane and are interacted with E. All world art is pixel-art (HD2DStage).
 export function ExploreScene({ area, viewportW, viewportH, paused, onInteractNpc, onExit }: ExploreSceneProps) {
   const game = useGame();
   const def = getArea(area);
 
-  // world is wider than the viewport so the camera glides.
   const worldWidth = Math.max(viewportW * 1.9, 1500);
   const usable = worldWidth - PAD * 2;
 
-  // NPC stage x positions
   const npcX = useMemo(() => def.npcs.map((n) => PAD + n.atFrac * usable), [def, usable]);
   const exitX = PAD + 0.92 * usable;
 
@@ -44,7 +42,6 @@ export function ExploreScene({ area, viewportW, viewportH, paused, onInteractNpc
   const [, setTick] = useState(0);
   const [nearby, setNearby] = useState<{ kind: "npc" | "exit"; idx: number } | null>(null);
 
-  // reset on area change
   useEffect(() => {
     posRef.current = PAD + 0.08 * usable;
     facingRef.current = "right";
@@ -112,28 +109,19 @@ export function ExploreScene({ area, viewportW, viewportH, paused, onInteractNpc
   }, [area, paused, viewportW, worldWidth, findNearby]);
 
   const camX = camRef.current;
-  const stageStyle: React.CSSProperties = {
-    position: "absolute",
-    inset: 0,
-    transform: `translate3d(${-camX}px,0,0)`,
-    willChange: "transform",
-  };
-
   const completed = game.progress.completedLessons;
 
   return (
     <div className="absolute inset-0 overflow-hidden">
-      <Diorama
+      <HD2DStage
         theme={def.theme}
         camX={camX}
         worldWidth={worldWidth}
         viewportW={viewportW}
         viewportH={viewportH}
-        laneBottomFrac={LANE_Y}
-      />
-
-      <div style={stageStyle}>
-        {/* NPCs / lesson objects */}
+        laneFrac={LANE_Y}
+      >
+        {/* NPCs / lesson crystals */}
         {def.npcs.map((n, i) => {
           const isLessonDone = n.lessonId ? completed.includes(n.lessonId) : false;
           return (
@@ -148,24 +136,14 @@ export function ExploreScene({ area, viewportW, viewportH, paused, onInteractNpc
           );
         })}
 
-        {/* exit gate marker */}
+        {/* exit gate marker (pixel torii arch) */}
         {def.exitTo && (
           <div
-            style={{
-              position: "absolute",
-              left: exitX,
-              top: LANE_Y * viewportH,
-              transform: "translate(-50%,-100%)",
-              zIndex: 18,
-            }}
-            className={nearby?.kind === "exit" ? "" : "opacity-90"}
+            style={{ position: "absolute", left: exitX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}
           >
-            <div
-              className="coer-bob flex flex-col items-center"
-              style={{ filter: "drop-shadow(0 0 14px rgba(255,220,140,0.6))" }}
-            >
-              <div className="text-3xl">⛩️</div>
-              <div className="mt-1 px-2 py-0.5 rounded bg-black/60 border border-[rgba(216,178,90,0.5)] text-[11px] text-[#e9cf86] whitespace-nowrap">
+            <div className="coer-bob flex flex-col items-center" style={{ filter: "drop-shadow(0 0 14px rgba(255,220,140,0.6))" }}>
+              <PixelGate />
+              <div className="mt-1 px-2 py-0.5 bg-black/65 border border-[rgba(216,178,90,0.5)] text-[11px] text-[#e9cf86] whitespace-nowrap">
                 → {def.exitLabel}
               </div>
             </div>
@@ -173,29 +151,16 @@ export function ExploreScene({ area, viewportW, viewportH, paused, onInteractNpc
         )}
 
         {/* player */}
-        <PixelCharacter
-          kind="arin"
-          baseSize={150}
-          worldX={posRef.current}
-          screenYFrac={LANE_Y}
-          viewportH={viewportH}
-          scale={1}
-          facing={facingRef.current}
-          moving={movingRef.current && !paused}
-          z={20}
-        />
-      </div>
-
-      <Atmosphere theme={def.theme} />
+        <div style={{ position: "absolute", left: posRef.current, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 20 }}>
+          <PixelSprite name="arin" height={150} facing={facingRef.current} moving={movingRef.current && !paused} />
+        </div>
+      </HD2DStage>
 
       {/* interaction prompt */}
       {nearby && !paused && (
-        <div
-          className="coer-fade-in absolute z-40"
-          style={{ bottom: 70, left: "50%", transform: "translateX(-50%)" }}
-        >
-          <div className="px-3 py-1.5 rounded border border-[rgba(216,178,90,0.5)] bg-black/70 text-xs text-[#e9cf86] flex items-center gap-2">
-            <kbd className="px-1.5 py-0.5 rounded border border-[rgba(216,178,90,0.4)] bg-black/50 font-mono text-[10px]">E</kbd>
+        <div className="coer-fade-in absolute z-40" style={{ bottom: 70, left: "50%", transform: "translateX(-50%)" }}>
+          <div className="px-3 py-1.5 border-2 border-[rgba(216,178,90,0.5)] bg-black/70 text-xs text-[#e9cf86] flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 border border-[rgba(216,178,90,0.4)] bg-black/50 font-mono text-[10px]">E</kbd>
             {nearby.kind === "npc"
               ? `${def.npcs[nearby.idx].lessonId && completed.includes(def.npcs[nearby.idx].lessonId!) ? "Talk again to" : "Talk to"} ${def.npcs[nearby.idx].name}`
               : `Travel to ${def.exitLabel}`}
@@ -223,59 +188,54 @@ function NpcActor({
   if (isLetter) {
     const char = npc.id === "letter-a" ? "ㅏ" : npc.id === "letter-eo" ? "ㅓ" : "가";
     return (
-      <div
-        style={{ position: "absolute", left: worldX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}
-      >
+      <div style={{ position: "absolute", left: worldX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}>
         {highlight && <Pointer />}
-        <div
-          className="coer-bob flex flex-col items-center"
-          style={{ filter: `drop-shadow(0 0 18px ${done ? "rgba(110,231,183,0.6)" : "rgba(255,220,140,0.8)"})` }}
-        >
-          {npc.id === "stone-tablet" ? (
-            <Sprite kind="tablet" size={84} />
-          ) : (
-            <div
-              className="text-5xl"
-              style={{ color: done ? "#9ff0c8" : "#ffe9a8", textShadow: "0 0 22px rgba(255,220,140,0.9)" }}
-            >
-              {char}
-            </div>
-          )}
+        <div className="flex flex-col items-center">
+          {/* floating glowing Hangul lesson crystal */}
+          <div
+            className="coer-crystal"
+            style={{
+              fontSize: 56,
+              color: done ? "#9ff0c8" : "#ffe9a8",
+              textShadow: `0 0 22px ${done ? "rgba(110,231,183,0.8)" : "rgba(255,220,140,0.95)"}`,
+            }}
+          >
+            {char}
+          </div>
+          {/* crystal pedestal */}
+          <div style={{ width: 30, height: 10, background: "linear-gradient(180deg,#9a8460,#5a4a36)", border: "2px solid #3a2e22", marginTop: -4 }} />
           {done && <div className="text-emerald-300 text-xs mt-0.5">✓ learned</div>}
         </div>
       </div>
     );
   }
 
-  const sprite: SpriteKind =
-    npc.sprite === "bori"
-      ? "bori"
-      : npc.sprite === "shopkeeper"
-      ? "shopkeeper"
-      : npc.sprite === "guard"
-      ? "guard"
-      : npc.sprite === "child"
-      ? "child"
-      : "elder";
+  const sprite: SpriteName =
+    npc.sprite === "bori" ? "bori"
+    : npc.sprite === "shopkeeper" ? "shopkeeper"
+    : npc.sprite === "guard" ? "guard"
+    : npc.sprite === "child" ? "child"
+    : "elder";
 
   return (
     <div style={{ position: "absolute", left: worldX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}>
       {highlight && <Pointer />}
       <div className="flex flex-col items-center">
-        <PixelCharacter
-          kind={sprite}
-          baseSize={130}
-          worldX={0}
-          screenYFrac={1}
-          viewportH={130}
-          scale={1}
-          facing="left"
-          bob={npc.sprite === "bori"}
-          glow={npc.sprite === "bori"}
-          z={1}
-        />
+        <PixelSprite name={sprite} height={130} facing="left" hover={npc.sprite === "bori"} glow={npc.sprite === "bori"} />
         {done && <div className="text-emerald-300 text-[11px] -mt-1">✓</div>}
       </div>
+    </div>
+  );
+}
+
+// Small pixel torii-style gate marker.
+function PixelGate() {
+  return (
+    <div style={{ position: "relative", width: 54, height: 56 }}>
+      <div style={{ position: "absolute", left: 4, top: 12, width: 8, height: 44, background: "#9a8460", border: "2px solid #5a4a36" }} />
+      <div style={{ position: "absolute", right: 4, top: 12, width: 8, height: 44, background: "#9a8460", border: "2px solid #5a4a36" }} />
+      <div style={{ position: "absolute", left: -2, top: 4, width: 58, height: 8, background: "#7a6a52", border: "2px solid #5a4a36" }} />
+      <div style={{ position: "absolute", left: 4, top: 16, width: 46, height: 5, background: "#caa24e" }} />
     </div>
   );
 }
@@ -293,7 +253,7 @@ function Pointer() {
         height: 0,
         borderLeft: "8px solid transparent",
         borderRight: "8px solid transparent",
-        borderTop: "11px solid rgba(233,207,134,0.95)",
+        borderTop: "11px solid #e9cf86",
         filter: "drop-shadow(0 0 6px rgba(233,207,134,0.8))",
         zIndex: 30,
       }}

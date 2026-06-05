@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { Sprite, type SpriteKind } from "../visual/Sprite";
+import { PixelSprite } from "./PixelSprite";
+import { PixelFrame } from "./PixelFrame";
+import type { SpriteName } from "../pixel/pixelSprites";
+
+// ───────────────────────────────────────────────────────────────────────────
+// Component 7 of 15 — PixelDialogueBox
+// Fantasy JRPG dialogue box: navy translucent panel, gold pixel border, corner
+// ornaments, a pixel-sprite speaker portrait, the Korean phrase highlighted,
+// and a typewriter text effect. Advance with click / Space / Enter.
+// ───────────────────────────────────────────────────────────────────────────
 
 export interface DialogueLine {
   speaker: string;
-  portrait?: SpriteKind;
+  portrait?: SpriteName | "bori";
   text: string;
   korean?: string;
 }
 
-interface DialogueBoxProps {
+interface PixelDialogueBoxProps {
   lines: DialogueLine[];
   textSpeed: "slow" | "normal" | "fast";
   onComplete: () => void;
@@ -16,8 +25,7 @@ interface DialogueBoxProps {
 
 const SPEEDS = { slow: 55, normal: 28, fast: 12 };
 
-// Typewriter dialogue panel anchored to the bottom of the viewport.
-export function DialogueBox({ lines, textSpeed, onComplete }: DialogueBoxProps) {
+export function PixelDialogueBox({ lines, textSpeed, onComplete }: PixelDialogueBoxProps) {
   const [idx, setIdx] = useState(0);
   const [shown, setShown] = useState("");
   const [done, setDone] = useState(false);
@@ -67,17 +75,15 @@ export function DialogueBox({ lines, textSpeed, onComplete }: DialogueBoxProps) 
   });
 
   if (!line) return null;
+  const portrait = (line.portrait === "bori" ? "bori" : line.portrait) as SpriteName | undefined;
 
   return (
-    <div
-      className="absolute inset-x-0 bottom-0 z-40 p-3 sm:p-4 cursor-pointer"
-      onClick={advance}
-    >
-      <div className="coer-panel coer-panel-frame mx-auto max-w-[760px] p-3 sm:p-4">
+    <div className="absolute inset-x-0 bottom-0 z-40 p-3 sm:p-4 cursor-pointer" onClick={advance}>
+      <PixelFrame className="mx-auto max-w-[760px] p-3 sm:p-4">
         <div className="flex items-start gap-3">
-          {line.portrait && (
-            <div className="shrink-0 w-14 h-14 rounded border border-[rgba(216,178,90,0.4)] bg-black/40 flex items-center justify-center">
-              <Sprite kind={line.portrait} size={46} />
+          {portrait && (
+            <div className="shrink-0 w-16 h-16 rounded border-2 border-[rgba(216,178,90,0.5)] bg-[rgba(8,12,26,0.7)] flex items-center justify-center overflow-hidden">
+              <PixelSprite name={portrait} height={52} hover={portrait === "bori"} glow={portrait === "bori"} />
             </div>
           )}
           <div className="min-w-0 flex-1">
@@ -93,7 +99,7 @@ export function DialogueBox({ lines, textSpeed, onComplete }: DialogueBoxProps) 
         <div className="mt-2 text-right text-[11px] text-[#bfb59c]">
           {done ? (idx + 1 < lines.length ? "▶ Space / Click" : "✓ Space / Click") : "…"}
         </div>
-      </div>
+      </PixelFrame>
     </div>
   );
 }

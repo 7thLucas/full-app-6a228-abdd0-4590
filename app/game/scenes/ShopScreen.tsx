@@ -29,7 +29,7 @@ export function ShopScreen({ onClose }: { onClose: () => void }) {
         <Sprite kind="shopkeeper" size={40} />
         <span className="text-sm text-[#ffd98a]">"Welcome, traveler. Coin only — spend wisely!"</span>
       </div>
-      <div className="text-center mb-4 text-[#e9cf86]">🪙 {progress.coins} coins</div>
+      <div className="text-center mb-4 text-[#e9cf86]">◈ {progress.coins} coins</div>
 
       <div className="grid sm:grid-cols-2 gap-2.5">
         {SHOP_ITEMS.map((it) => {
@@ -43,7 +43,7 @@ export function ShopScreen({ onClose }: { onClose: () => void }) {
               </div>
               <p className="text-[12px] text-[#bfb59c] min-h-[32px]">{it.description}</p>
               <div className="flex items-center justify-between mt-2">
-                <span className="text-sm text-[#caa24e]">🪙 {it.price}</span>
+                <span className="text-sm text-[#caa24e]">◈ {it.price}</span>
                 <GoldButton className="!px-3 !py-1 text-xs" disabled={!afford} onClick={() => buy(it.id, it.price, it.kind)}>
                   {afford ? "Buy" : "Need coins"}
                 </GoldButton>
@@ -53,7 +53,7 @@ export function ShopScreen({ onClose }: { onClose: () => void }) {
         })}
       </div>
       <div className="text-center text-[11px] text-[#bfb59c] mt-3">
-        Bori affection: {"💛".repeat(Math.min(5, progress.boriAffection)) || "—"}
+        Bori affection: {"♥".repeat(Math.min(5, progress.boriAffection)) || "—"}
       </div>
     </MenuShell>
   );

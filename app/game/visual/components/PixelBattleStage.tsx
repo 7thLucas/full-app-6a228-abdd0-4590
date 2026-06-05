@@ -1,15 +1,26 @@
 import { useMemo, useRef, useState } from "react";
-import { getEnemy, type EnemyDef, type AreaTheme } from "../data/gameData";
-import { getQuestion, getVocab, XP } from "../data/learningData";
-import { useGame } from "../engine/store";
-import { Diorama } from "../visual/Diorama";
-import { Atmosphere } from "../visual/Atmosphere";
-import { PixelCharacter } from "../visual/PixelCharacter";
-import { Sprite } from "../visual/Sprite";
-import { GoldButton, StatBar } from "../ui/primitives";
-import { sfx } from "../engine/sfx";
+import { getEnemy, type EnemyDef, type AreaTheme } from "../../data/gameData";
+import { getQuestion, getVocab, XP } from "../../data/learningData";
+import { useGame } from "../../engine/store";
+import { sfx } from "../../engine/sfx";
+import { HD2DStage } from "./HD2DStage";
+import { PixelSprite } from "./PixelSprite";
+import { PixelFrame } from "./PixelFrame";
+import { PixelCommandButtons } from "./PixelCommandButtons";
+import { FluencyComboMeter } from "./FluencyComboMeter";
+import { MeaningBreakEffect } from "./MeaningBreakEffect";
+import { StatBar } from "../../ui/primitives";
 
-interface BattleSceneProps {
+// ───────────────────────────────────────────────────────────────────────────
+// Component 9 of 15 — PixelBattleStage
+// Side-view HD-2D learning battle: Arin + Bori on the left, the Silence Wisp on
+// the right, the current area as a pixel backdrop, and a bottom pixel command
+// panel. Correct Korean answers attack (glowing pixel word over Arin, slash +
+// damage pop), reduce the Confusion Shield (Meaning Break), and build the
+// Fluency Combo. Preserves the original battle logic exactly.
+// ───────────────────────────────────────────────────────────────────────────
+
+interface PixelBattleStageProps {
   enemyId: string;
   theme: AreaTheme;
   viewportW: number;
@@ -19,20 +30,15 @@ interface BattleSceneProps {
 
 type Command = "word" | "sound" | "grammar" | "hint" | "review" | "item";
 
-// Fluency Combo multipliers
 const COMBO = [1, 1.2, 1.4, 1.7, 2.0];
 function comboMult(streak: number): number {
   return COMBO[Math.min(streak, COMBO.length - 1)];
 }
-
 const BASE_DMG = 14;
 
-// Side-view HD-2D learning battle. Correct Korean answers attack; the enemy's
-// Confusion Shield (Meaning Break) must be broken; consecutive correct answers
-// build a Fluency Combo for escalating damage.
-export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: BattleSceneProps) {
+export function PixelBattleStage({ enemyId, theme, viewportW, viewportH, onEnd }: PixelBattleStageProps) {
   const game = useGame();
-  const { progress, settings } = game;
+  const { progress } = game;
   const enemy = getEnemy(enemyId) as EnemyDef;
 
   const questions = useMemo(
@@ -43,14 +49,13 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
   const [enemyHp, setEnemyHp] = useState(enemy.hp);
   const [shield, setShield] = useState(enemy.confusionShield);
   const [combo, setCombo] = useState(0);
-  const [meaningBreak, setMeaningBreak] = useState(false); // enemy loses next attack
-  const [exposed, setExposed] = useState(false); // boss: 3 in a row
+  const [meaningBreak, setMeaningBreak] = useState(false);
+  const [exposed, setExposed] = useState(false);
   const [correctRun, setCorrectRun] = useState(0);
   const [playerHp, setPlayerHp] = useState(progress.hearts * 20);
   const maxPlayerHp = progress.maxHearts * 20;
 
   const [phase, setPhase] = useState<"command" | "question" | "result" | "over">("command");
-  const [activeCmd, setActiveCmd] = useState<Command>("word");
   const qIdxRef = useRef(0);
   const [currentQ, setCurrentQ] = useState(questions[0]);
   const [log, setLog] = useState<string[]>([`A ${enemy.name} blocks the gate!`]);
@@ -58,6 +63,8 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
   const [glowWord, setGlowWord] = useState<string | null>(null);
   const [shake, setShake] = useState(0);
   const [showBreak, setShowBreak] = useState(false);
+  const [slash, setSlash] = useState(0);
+  const [arinCast, setArinCast] = useState(false);
   const [correctTotal, setCorrectTotal] = useState(0);
   const [xpTotal, setXpTotal] = useState(0);
   const [usedHint, setUsedHint] = useState(false);
@@ -94,8 +101,6 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
       }
       return;
     }
-    // word / sound / grammar -> ask a question
-    setActiveCmd(cmd);
     const q = questions[qIdxRef.current % questions.length];
     setCurrentQ(q);
     setShowHint(false);
@@ -117,27 +122,17 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
       const run = correctRun + 1;
       setCorrectRun(run);
       setCorrectTotal((c) => c + 1);
-      let gain = XP.correct + (usedHint ? 0 : XP.noHintBonus);
+      const gain = XP.correct + (usedHint ? 0 : XP.noHintBonus);
       game.addXp(gain);
       setXpTotal((x) => x + gain);
       game.bumpDaily("dq2");
 
-      // damage with combo + break + exposed bonuses
       let dmg = BASE_DMG * comboMult(newCombo);
       let crit = newCombo >= 4;
-      if (meaningBreak) {
-        dmg *= 1.6;
-        crit = true;
-        setMeaningBreak(false);
-      }
-      if (exposed) {
-        dmg *= 1.5;
-        crit = true;
-        setExposed(false);
-      }
+      if (meaningBreak) { dmg *= 1.6; crit = true; setMeaningBreak(false); }
+      if (exposed) { dmg *= 1.5; crit = true; setExposed(false); }
       dmg = Math.round(dmg);
 
-      // shield handling (Meaning Break)
       let newShield = shield;
       if (shield > 0) {
         newShield = shield - 1;
@@ -153,7 +148,6 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
         }
       }
 
-      // boss exposed at 3-in-a-row
       if (enemy.isBoss && run >= 3 && !exposed) {
         setExposed(true);
         pushLog(`${enemy.name} is EXPOSED! Bonus damage next hit.`);
@@ -161,6 +155,8 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
 
       const vocab = q.vocabId ? getVocab(q.vocabId) : undefined;
       setGlowWord(vocab?.korean ?? q.answer);
+      setArinCast(true);
+      setSlash((s) => s + 1);
       floatId.current += 1;
       setFloatDmg({ id: floatId.current, n: dmg, crit });
       setShake((s) => s + 1);
@@ -170,25 +166,20 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
 
       window.setTimeout(() => {
         setGlowWord(null);
-        if (nextHp <= 0) {
-          victory();
-        } else {
-          setPhase("command");
-        }
+        setArinCast(false);
+        if (nextHp <= 0) victory();
+        else setPhase("command");
       }, 900);
     } else {
       sfx("error");
       setCombo(0);
       setCorrectRun(0);
-      // boss restores a little shield on wrong
       if (enemy.isBoss && shield < enemy.confusionShield) {
         setShield((s) => Math.min(enemy.confusionShield, s + 1));
         pushLog("Wrong — the fog thickens, restoring some shield.");
       }
       const vocab = q.vocabId ? getVocab(q.vocabId) : undefined;
-      pushLog(
-        `Not quite. ${q.answer}${vocab ? ` = ${vocab.english}` : ""}. Bori: "It's okay — you'll get it!"`,
-      );
+      pushLog(`Not quite. ${q.answer}${vocab ? ` = ${vocab.english}` : ""}. Bori: "It's okay — you'll get it!"`);
       enemyTurn(true);
     }
   }
@@ -202,7 +193,6 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
         setPhase("command");
         return;
       }
-      // enemy attack costs HP (and a heart only if player answered wrong)
       const dmg = enemy.isBoss ? 16 : 12;
       const charm = progress.inventory.memoryCharm ?? 0;
       if (playerWrong && charm > 0) {
@@ -217,11 +207,8 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
       setShake((s) => s + 1);
       const nextHp = Math.max(0, playerHp - dmg);
       setPlayerHp(nextHp);
-      if (nextHp <= 0 || progress.hearts <= 0) {
-        defeat();
-      } else {
-        setPhase("command");
-      }
+      if (nextHp <= 0 || progress.hearts <= 0) defeat();
+      else setPhase("command");
     }, 700);
   }
 
@@ -243,7 +230,8 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
     window.setTimeout(() => onEnd(false, { correct: correctTotal, xp: xpTotal }), 600);
   }
 
-  const worldWidth = Math.max(viewportW * 1.2, 1100);
+  const worldWidth = Math.max(viewportW * 1.05, 1000);
+  const laneFrac = 0.74;
   const vocabHint = currentQ.vocabId ? getVocab(currentQ.vocabId) : undefined;
 
   const commands: { id: Command; label: string; desc: string }[] = [
@@ -258,61 +246,59 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
   return (
     <div className="absolute inset-0 overflow-hidden">
       <div className={shake ? "coer-shake absolute inset-0" : "absolute inset-0"} key={`shk-${shake}`}>
-        <Diorama theme={theme} camX={0} worldWidth={worldWidth} viewportW={viewportW} viewportH={viewportH} laneBottomFrac={0.62} />
-        <Atmosphere theme={theme} />
+        <HD2DStage
+          theme={theme}
+          camX={0}
+          worldWidth={worldWidth}
+          viewportW={viewportW}
+          viewportH={viewportH}
+          laneFrac={laneFrac}
+        >
+          {/* Arin + Bori on the left */}
+          <div style={{ position: "absolute", left: worldWidth * 0.22, top: laneFrac * viewportH, transform: "translate(-50%,-100%)", zIndex: 22 }}>
+            <div className={arinCast ? "coer-cast" : undefined}>
+              <PixelSprite name="arin" height={150} facing="right" glow={arinCast} />
+            </div>
+            {glowWord && (
+              <div className="coer-dmg absolute" style={{ left: "50%", top: -70, transform: "translateX(-50%)", color: "#ffe9a8", fontSize: 26, textShadow: "0 0 16px rgba(255,220,140,0.9)", whiteSpace: "nowrap" }}>
+                {glowWord}
+              </div>
+            )}
+          </div>
+          <div style={{ position: "absolute", left: worldWidth * 0.13, top: laneFrac * viewportH - 20, transform: "translate(-50%,-100%)", zIndex: 21 }}>
+            <PixelSprite name="bori" height={84} facing="right" glow hover />
+          </div>
+
+          {/* enemy right */}
+          <div style={{ position: "absolute", left: worldWidth * 0.78, top: laneFrac * viewportH, transform: "translate(-50%,-100%)", zIndex: 22 }}>
+            <div className={meaningBreak ? "opacity-60" : ""}>
+              <PixelSprite name="wisp" height={150} facing="left" hover glow />
+            </div>
+            {slash > 0 && (
+              <div key={`sl-${slash}`} className="coer-slash absolute" style={{ left: "10%", top: "20%", width: 70, height: 6, background: "linear-gradient(90deg,transparent,#fff3c4,transparent)", boxShadow: "0 0 14px rgba(255,240,180,0.9)" }} />
+            )}
+            {floatDmg && (
+              <div key={floatDmg.id} className="coer-dmg absolute" style={{ left: "50%", top: -40, transform: "translateX(-50%)", color: floatDmg.crit ? "#ffd86a" : "#ff8a8a", fontSize: floatDmg.crit ? 34 : 26, fontWeight: 700, textShadow: "0 0 12px rgba(0,0,0,0.7)" }}>
+                {floatDmg.n}
+              </div>
+            )}
+          </div>
+        </HD2DStage>
 
         {/* battle entry flash */}
         <div className="coer-battle-flash absolute inset-0 bg-violet-300/30 pointer-events-none" style={{ zIndex: 25 }} />
 
-        {/* party: Arin + Bori bottom-left */}
-        <div style={{ position: "absolute", left: "20%", top: "60%", zIndex: 22 }}>
-          <PixelCharacter kind="arin" baseSize={140} worldX={0} screenYFrac={1} viewportH={140} scale={1} facing="right" z={2} />
-          {glowWord && (
-            <div
-              className="coer-dmg absolute"
-              style={{ left: "50%", top: -70, transform: "translateX(-50%)", color: "#ffe9a8", fontSize: 26, textShadow: "0 0 16px rgba(255,220,140,0.9)", whiteSpace: "nowrap" }}
-            >
-              {glowWord}
-            </div>
-          )}
-        </div>
-        <div style={{ position: "absolute", left: "9%", top: "66%", zIndex: 21 }}>
-          <PixelCharacter kind="bori" baseSize={84} worldX={0} screenYFrac={1} viewportH={84} scale={1} facing="right" glow bob z={1} />
-        </div>
-
-        {/* enemy right */}
-        <div style={{ position: "absolute", right: "16%", top: "56%", zIndex: 22 }}>
-          <div className={meaningBreak ? "opacity-60" : ""}>
-            <Sprite kind="wisp" size={150} facing="left" />
-          </div>
-          {floatDmg && (
-            <div
-              key={floatDmg.id}
-              className="coer-dmg absolute"
-              style={{ left: "50%", top: -40, transform: "translateX(-50%)", color: floatDmg.crit ? "#ffd86a" : "#ff8a8a", fontSize: floatDmg.crit ? 34 : 26, fontWeight: 700, textShadow: "0 0 12px rgba(0,0,0,0.7)" }}
-            >
-              {floatDmg.n}
-            </div>
-          )}
-        </div>
-
-        {showBreak && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 26 }}>
-            <div className="coer-shatter-flash coer-heading text-4xl" style={{ color: "#c89aff", textShadow: "0 0 30px rgba(200,154,255,0.9)" }}>
-              MEANING RESTORED
-            </div>
-          </div>
-        )}
+        <MeaningBreakEffect show={showBreak} />
       </div>
 
-      {/* enemy HP + shield bar (top) */}
+      {/* enemy HP + shield bar */}
       <div className="absolute top-3 right-3 z-30 w-[260px]">
-        <div className="coer-panel p-2">
+        <PixelFrame className="p-2">
           <div className="flex justify-between text-xs text-[#e9cf86] mb-1">
             <span>{enemy.name}{enemy.isBoss ? " (Boss)" : ""}</span>
             <span>{enemyHp}/{enemy.hp}</span>
           </div>
-          <div className="h-2.5 rounded-full bg-black/50 overflow-hidden border border-black/60">
+          <div className="h-2.5 bg-black/55 overflow-hidden border border-black/60">
             <div className="h-full" style={{ width: `${(enemyHp / enemy.hp) * 100}%`, background: "linear-gradient(90deg,#7a3aa0,#b06ad6)", transition: "width 0.4s" }} />
           </div>
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[#bfb59c]">
@@ -323,21 +309,14 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
             {meaningBreak && <span className="text-amber-300 ml-1">BROKEN</span>}
             {exposed && <span className="text-rose-300 ml-1">EXPOSED</span>}
           </div>
-        </div>
+        </PixelFrame>
       </div>
 
-      {/* combo indicator */}
-      {combo >= 2 && (
-        <div className="absolute top-3 left-3 z-30 coer-panel px-3 py-1.5">
-          <span className="coer-heading text-sm">Fluency Combo x{combo}</span>
-          <span className="text-[11px] text-[#bfb59c] ml-2">+{Math.round((comboMult(combo) - 1) * 100)}% dmg</span>
-        </div>
-      )}
+      <FluencyComboMeter combo={combo} />
 
       {/* bottom command / question panel */}
       <div className="absolute inset-x-0 bottom-0 z-30 p-3">
-        <div className="coer-panel coer-panel-frame mx-auto max-w-[720px] p-3">
-          {/* player hearts/hp */}
+        <PixelFrame className="mx-auto max-w-[720px] p-3">
           <div className="flex items-center gap-3 mb-2">
             <div className="flex gap-0.5">
               {Array.from({ length: progress.maxHearts }).map((_, i) => (
@@ -349,58 +328,41 @@ export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: Bat
             </div>
           </div>
 
-          {/* log */}
-          <div className="h-[52px] overflow-hidden text-[12px] text-[#cfc6ad] leading-tight mb-2 bg-black/25 rounded p-1.5 border border-[rgba(216,178,90,0.15)]">
-            {log.slice(-3).map((l, i) => (
-              <div key={i}>{l}</div>
-            ))}
+          <div className="h-[52px] overflow-hidden text-[12px] text-[#cfc6ad] leading-tight mb-2 bg-black/25 p-1.5 border border-[rgba(216,178,90,0.15)]">
+            {log.slice(-3).map((l, i) => (<div key={i}>{l}</div>))}
           </div>
 
           {phase === "command" || phase === "result" || phase === "over" ? (
-            <div className="grid grid-cols-3 gap-2">
-              {commands.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  disabled={phase !== "command"}
-                  onClick={() => pickCommand(c.id)}
-                  title={c.desc}
-                  className="rounded border border-[rgba(216,178,90,0.5)] px-2 py-2 text-[13px] text-[#ece6d6] bg-gradient-to-b from-[rgba(25,32,58,0.9)] to-[rgba(10,15,30,0.95)] hover:border-[#e9cf86] hover:text-[#e9cf86] disabled:opacity-40 transition-all"
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
+            <PixelCommandButtons
+              columns={3}
+              options={commands.map((c) => ({
+                label: c.label,
+                title: c.desc,
+                disabled: phase !== "command",
+                state: phase === "command" ? "idle" : "dim",
+                onClick: () => pickCommand(c.id),
+              }))}
+            />
           ) : (
             <div>
               <div className="text-center mb-2">
                 {currentQ.subPrompt && (
-                  <div className="text-3xl text-[#ffe9a8] mb-0.5" style={{ textShadow: "0 0 16px rgba(255,220,140,0.6)" }}>
-                    {currentQ.subPrompt}
-                  </div>
+                  <div className="text-3xl text-[#ffe9a8] mb-0.5" style={{ textShadow: "0 0 16px rgba(255,220,140,0.6)" }}>{currentQ.subPrompt}</div>
                 )}
                 <div className="text-sm text-[#ece6d6]">{currentQ.prompt}</div>
                 {showHint && (
                   <div className="text-xs text-[#ffd98a] mt-1">
-                    🦊 {vocabHint ? `${vocabHint.korean} = ${vocabHint.english}` : `Answer: ${currentQ.answer}`}
+                    Bori: {vocabHint ? `${vocabHint.korean} = ${vocabHint.english}` : `Answer: ${currentQ.answer}`}
                   </div>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {currentQ.options.map((o) => (
-                  <button
-                    key={o}
-                    type="button"
-                    onClick={() => answer(o)}
-                    className="rounded border border-[rgba(216,178,90,0.5)] px-3 py-2 text-sm text-[#ece6d6] bg-gradient-to-b from-[rgba(25,32,58,0.9)] to-[rgba(10,15,30,0.95)] hover:border-[#e9cf86] hover:text-[#e9cf86] transition-all"
-                  >
-                    {o}
-                  </button>
-                ))}
-              </div>
+              <PixelCommandButtons
+                columns={2}
+                options={currentQ.options.map((o) => ({ label: o, onClick: () => answer(o) }))}
+              />
             </div>
           )}
-        </div>
+        </PixelFrame>
       </div>
     </div>
   );

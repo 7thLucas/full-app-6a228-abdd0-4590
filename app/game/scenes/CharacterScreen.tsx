@@ -21,7 +21,7 @@ export function CharacterScreen({ onClose }: { onClose: () => void }) {
         <div>
           <div className="coer-heading text-xl">{progress.learnerName}</div>
           <div className="text-sm text-[#e9cf86]">L{lvl.level} · {lvl.title}</div>
-          <div className="text-[12px] text-[#bfb59c] mt-0.5">{progress.xp} XP · 🪙 {progress.coins} · 🔥 Day {progress.streak}</div>
+          <div className="text-[12px] text-[#bfb59c] mt-0.5">{progress.xp} XP · ◈ {progress.coins} · ✦ Day {progress.streak}</div>
         </div>
       </div>
 

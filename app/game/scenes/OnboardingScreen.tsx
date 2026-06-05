@@ -66,7 +66,7 @@ export function OnboardingScreen({ onDone, onBack }: OnboardingProps) {
             </div>
             {chosen && (
               <div className="mt-3 text-sm text-[#ffd98a] bg-black/30 rounded p-2 border border-[rgba(216,178,90,0.3)]">
-                🦊 Bori: {chosen.reply}
+                Bori: {chosen.reply}
               </div>
             )}
             <div className="mt-4 flex justify-between">
@@ -107,7 +107,7 @@ export function OnboardingScreen({ onDone, onBack }: OnboardingProps) {
             </div>
             {placement && (
               <div className="mt-3 text-sm text-[#ffd98a] bg-black/30 rounded p-2 border border-[rgba(216,178,90,0.3)]">
-                🦊 Bori:{" "}
+                Bori:{" "}
                 {placement === PLACEMENT.answer
                   ? "Nicely done — you already know a greeting! We'll still cover the letters."
                   : "No worries at all. That's exactly what we're here to learn together."}
@@ -135,7 +135,7 @@ export function OnboardingScreen({ onDone, onBack }: OnboardingProps) {
               placeholder="Arin"
             />
             <div className="mt-3 text-sm text-[#ffd98a] bg-black/30 rounded p-2 border border-[rgba(216,178,90,0.3)]">
-              🦊 Bori: Then let's go, {name || "traveler"}. The Letter Shrine is waiting at dawn.
+              Bori: Then let's go, {name || "traveler"}. The Letter Shrine is waiting at dawn.
             </div>
             <div className="mt-4 flex justify-between">
               <GoldButton onClick={() => setStep("placement")}>Back</GoldButton>

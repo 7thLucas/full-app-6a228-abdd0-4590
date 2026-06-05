@@ -1,6 +1,7 @@
 import { useGame } from "../engine/store";
 import { levelForXp, nextLevel } from "../data/learningData";
 import { KeyHint } from "./primitives";
+import { MemoryFlameWidget } from "../visual/components/MemoryFlameWidget";
 
 // Exploration HUD: area, learning goal, hearts, XP bar, Memory Flame streak.
 export function Hud({ areaName, goal }: { areaName: string; goal: string }) {
@@ -23,14 +24,14 @@ export function Hud({ areaName, goal }: { areaName: string; goal: string }) {
         </div>
 
         {/* right: vitals */}
-        <div className="coer-panel px-3 py-2 min-w-[180px]">
-          <div className="flex items-center gap-1 mb-1">
-            {Array.from({ length: progress.maxHearts }).map((_, i) => (
-              <span key={i} className={i < progress.hearts ? "text-rose-400" : "text-[#3a3340]"}>♥</span>
-            ))}
-            <span className="ml-auto flex items-center gap-1 text-amber-300 text-xs">
-              <span className="coer-flicker">🔥</span> Day {progress.streak}
-            </span>
+        <div className="coer-panel px-3 py-2 min-w-[210px]">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-1">
+              {Array.from({ length: progress.maxHearts }).map((_, i) => (
+                <span key={i} className={i < progress.hearts ? "text-rose-400" : "text-[#3a3340]"}>♥</span>
+              ))}
+            </div>
+            <MemoryFlameWidget streak={progress.streak} weekDays={progress.weekDays} compact />
           </div>
           <div className="flex items-center justify-between text-[10px] text-[#bfb59c] mb-0.5">
             <span>L{lvl.level} {lvl.title}</span>
@@ -39,7 +40,7 @@ export function Hud({ areaName, goal }: { areaName: string; goal: string }) {
           <div className="h-2 rounded-full bg-black/50 overflow-hidden border border-black/60">
             <div className="h-full" style={{ width: `${xpPct}%`, background: "linear-gradient(90deg,#caa24e,#ffd98a)", transition: "width 0.45s" }} />
           </div>
-          <div className="mt-1 text-[10px] text-[#caa24e] text-right">🪙 {progress.coins}</div>
+          <div className="mt-1 text-[10px] text-[#caa24e] text-right">◈ {progress.coins} coins</div>
         </div>
       </div>
 

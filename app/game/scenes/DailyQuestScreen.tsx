@@ -22,7 +22,7 @@ export function DailyQuestScreen({ onClose }: { onClose: () => void }) {
   return (
     <MenuShell title="Daily Quest" onClose={onClose}>
       <p className="text-sm text-[#ffd98a] text-center mb-4">
-        🦊 Bori: Finish a few of these every day to keep your Memory Flame burning!
+        Bori: Finish a few of these every day to keep your Memory Flame burning!
       </p>
       <div className="grid gap-2.5">
         {DAILY_QUESTS.map((dq) => {
@@ -39,7 +39,7 @@ export function DailyQuestScreen({ onClose }: { onClose: () => void }) {
                 <div className="h-full" style={{ width: `${(cur / dq.target) * 100}%`, background: "linear-gradient(90deg,#caa24e,#ffd98a)", transition: "width 0.4s" }} />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[12px] text-[#caa24e]">+{dq.reward.xp} XP · 🪙 {dq.reward.coins} · 💛 Bori</span>
+                <span className="text-[12px] text-[#caa24e]">+{dq.reward.xp} XP · ◈ {dq.reward.coins} · ♥ Bori</span>
                 <GoldButton className="!px-3 !py-1 text-xs" disabled={!complete || claimed} onClick={() => claim(dq.id, dq.reward.xp, dq.reward.coins)}>
                   {claimed ? "Claimed" : complete ? "Claim" : "In progress"}
                 </GoldButton>
