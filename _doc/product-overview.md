@@ -130,6 +130,22 @@ candlelit interiors. Subtle animated particles (dust, fireflies, embers, fog), t
 flicker, idle breathing, floating damage numbers. **Nostalgic, melancholic, but premium** — never
 photorealistic, never generic browser styling.
 
+**Camera & framing (defining):** the view is a **cinematic side-view / slight 3/4
+diorama**, like a theatrical stage — explicitly **NOT top-down**, never a grid of square
+tiles, never a minimap-style room. Kael stands **upright** on a **horizontal walkable
+path** in the lower-middle of the screen and moves **left/right** across the scene (with
+optional shallow depth movement on the path); the camera follows him horizontally with
+only slight vertical follow when needed. Every area fills the **entire 16:9 viewport**
+with **layered planes** — far background (mountains, sky, moon, distant ruins/city lights,
+slow parallax), background architecture (walls, windows, pillars, arches, lit lanterns &
+stained glass), midground walkable layer (player, NPCs, enemies, doors, chests,
+interactables), foreground framing (blurred pillars, branches, snowbanks, pews, banners),
+and an atmosphere layer (fog, snow, dust, fireflies, god rays, bloom, vignette). No empty
+black space, no visible grid, no overhead camera. **Battles are HD-2D side-view too** —
+party on the left/lower-left, enemies on the right, staged on the current area transformed
+into a cinematic battle backdrop with slash/fire effects, screen shake, hit flashes, and
+slight zoom on powerful skills — never a top-down or plain card-style combat layout.
+
 **UI direction:** dark fantasy shell around a centered **16:9 viewport**. Dark navy/black
 panels, **gold borders**, soft glow highlights, serif-inspired fantasy headings with clean
 readable body text, pixel-icon accents, smooth transitions. The main menu shows the title
