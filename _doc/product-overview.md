@@ -24,6 +24,15 @@ playing:
 - **Retention systems** (Wordbook, Memory Flame streak, XP/levels) turn one session into a
   daily habit.
 
+## Cast & world
+The journey is set in **Haneul Road**, a world where language itself is the magic that holds
+things together. The learner plays **Arin**, a traveler who arrives unable to read, guided by
+**Bori** — a small, glowing fox-spirit companion. Bori is an **original character** (a guide,
+not a mascot clone): they introduce each lesson, offer optional hints, correct wrong answers
+warmly and without shaming, and celebrate streaks and wins. Bori is the encouraging voice of
+the whole experience and the through-line that ties exploration, dialogue, and battle
+together — present in lessons, on the field, and beside the player in combat.
+
 ## The playable slice — Chapter 0 & Chapter 1 (a 10-minute prototype)
 The prototype covers the first two beats of the journey and proves the full loop end to end.
 
