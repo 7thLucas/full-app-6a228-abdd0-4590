@@ -1,0 +1,350 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Cinzel:wght@400;500;600;700;800;900&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #09090b;
+    --card: #ffffff;
+    --card-foreground: #09090b;
+    --popover: #ffffff;
+    --popover-foreground: #09090b;
+    --primary: #2563eb;
+    --primary-foreground: #ffffff;
+    --secondary: #f4f4f5;
+    --secondary-foreground: #18181b;
+    --muted: #f4f4f5;
+    --muted-foreground: #71717a;
+    --accent: #f4f4f5;
+    --accent-foreground: #18181b;
+    --destructive: #ef4444;
+    --destructive-foreground: #fafafa;
+    --border: #e4e4e7;
+    --input: #e4e4e7;
+    --ring: #2563eb;
+    --radius: 0.5rem;
+    --chart-1: #f97316;
+    --chart-2: #0d9488;
+    --chart-3: #1e3a5f;
+    --chart-4: #d4a017;
+    --chart-5: #ea580c;
+    --navbar-background: #ffffff;
+    --sidebar-background: #fafafa;
+    --sidebar-foreground: #3f3f46;
+    --sidebar-primary: #2563eb;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #f4f4f5;
+    --sidebar-accent-foreground: #18181b;
+    --sidebar-border: #e4e4e7;
+    --sidebar-ring: #2563eb;
+  }
+
+  .dark {
+    --background: #171719;
+    --foreground: #f4f4f5;
+    --card: #171719;
+    --card-foreground: #f4f4f5;
+    --popover: #171719;
+    --popover-foreground: #f4f4f5;
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    --secondary: #27272a;
+    --secondary-foreground: #f4f4f5;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --accent: #27272a;
+    --accent-foreground: #f4f4f5;
+    --destructive: #ef4444;
+    --destructive-foreground: #fafafa;
+    --border: #3f3f47;
+    --input: #27272a;
+    --ring: #3b82f6;
+    --chart-1: #3b82f6;
+    --chart-2: #10b981;
+    --chart-3: #f59e0b;
+    --chart-4: #8b5cf6;
+    --chart-5: #ec4899;
+    --navbar-background: #09090b;
+    --sidebar-background: #09090b;
+    --sidebar-foreground: #f4f4f5;
+    --sidebar-primary: #3b82f6;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #171719;
+    --sidebar-accent-foreground: #f4f4f5;
+    --sidebar-border: #3f3f46;
+    --sidebar-ring: #3b82f6;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', 'Poppins', 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+/* React DatePicker Styles */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker {
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.react-datepicker__header {
+  background-color: var(--background);
+  border-bottom: 1px solid var(--border);
+  border-top-left-radius: calc(var(--radius) - 2px);
+  border-top-right-radius: calc(var(--radius) - 2px);
+  padding-top: 0.75rem;
+}
+
+.react-datepicker__current-month {
+  color: var(--foreground);
+  font-weight: 600;
+  padding-bottom: 0.5rem;
+}
+
+.react-datepicker__day-name {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.react-datepicker__day {
+  color: var(--foreground);
+  border-radius: calc(var(--radius) - 4px);
+}
+
+.react-datepicker__day:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--in-selecting-range,
+.react-datepicker__day--in-range {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.react-datepicker__day--keyboard-selected {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.react-datepicker__day--disabled {
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+
+.react-datepicker__time-container {
+  border-left: 1px solid var(--border);
+}
+
+.react-datepicker__time-container .react-datepicker__time {
+  background-color: var(--background);
+}
+
+.react-datepicker__time-container .react-datepicker__time .react-datepicker__time-box {
+  border-bottom-right-radius: calc(var(--radius) - 2px);
+}
+
+.react-datepicker__time-list-item {
+  color: var(--foreground);
+}
+
+.react-datepicker__time-list-item:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.react-datepicker__time-list-item--selected {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Chronicles of the Eight Roads — dark-fantasy game shell
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --gold: #d8b25a;
+  --gold-bright: #e9cf86;
+  --ice: #7fb4d6;
+  --ember: #e07a3c;
+  --violet: #b06ad6;
+  --ink: #050811;
+  --panel: #0b1020;
+  --panel-2: #131a31;
+  --parchment: #ece6d6;
+}
+
+body {
+  background: #050811;
+  color: var(--parchment);
+  font-family: 'EB Garamond', 'Inter', serif;
+  overflow: hidden;
+}
+
+.coer-root {
+  font-family: 'EB Garamond', 'Inter', serif;
+  color: var(--parchment);
+}
+
+.coer-heading {
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  text-shadow: 0 0 14px rgba(216, 178, 90, 0.35);
+}
+
+.coer-panel {
+  background: linear-gradient(160deg, rgba(19, 26, 49, 0.96), rgba(8, 12, 26, 0.97));
+  border: 1px solid rgba(216, 178, 90, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6) inset,
+    0 0 24px rgba(0, 0, 0, 0.6),
+    0 0 36px rgba(216, 178, 90, 0.08);
+  border-radius: 6px;
+}
+
+.coer-panel-frame {
+  position: relative;
+}
+.coer-panel-frame::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(216, 178, 90, 0.25);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.coer-vignette::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.65) 100%);
+  z-index: 30;
+}
+
+.coer-bloom {
+  filter: drop-shadow(0 0 6px rgba(255, 220, 150, 0.45));
+}
+
+.coer-menu-item {
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.12em;
+  transition: all 0.18s ease;
+}
+.coer-menu-item:hover,
+.coer-menu-item[data-active='true'] {
+  color: var(--gold-bright);
+  text-shadow: 0 0 16px rgba(233, 207, 134, 0.7);
+  transform: translateX(4px);
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes coer-breathe {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-1.5px) scaleY(1.015); }
+}
+.coer-breathe { animation: coer-breathe 2.6s ease-in-out infinite; }
+
+@keyframes coer-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.coer-bob { animation: coer-bob 2.2s ease-in-out infinite; }
+
+@keyframes coer-flicker {
+  0%, 100% { opacity: 0.9; }
+  45% { opacity: 0.65; }
+  60% { opacity: 1; }
+  75% { opacity: 0.78; }
+}
+.coer-flicker { animation: coer-flicker 1.4s ease-in-out infinite; }
+
+@keyframes coer-snow {
+  0% { transform: translateY(-10%) translateX(0); }
+  100% { transform: translateY(110%) translateX(-30px); }
+}
+
+@keyframes coer-float-up {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(-60px); opacity: 0; }
+}
+
+@keyframes coer-dmg {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  20% { transform: translateY(-10px) scale(1.2); opacity: 1; }
+  100% { transform: translateY(-44px) scale(1); opacity: 0; }
+}
+.coer-dmg { animation: coer-dmg 1.1s ease-out forwards; }
+
+@keyframes coer-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-6px, 3px); }
+  40% { transform: translate(5px, -4px); }
+  60% { transform: translate(-4px, -2px); }
+  80% { transform: translate(4px, 3px); }
+}
+.coer-shake { animation: coer-shake 0.5s ease-in-out; }
+
+@keyframes coer-shatter-flash {
+  0% { opacity: 0; transform: scale(0.4); }
+  30% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+.coer-shatter-flash { animation: coer-shatter-flash 0.9s ease-out forwards; }
+
+@keyframes coer-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.coer-fade-in { animation: coer-fade-in 0.6s ease forwards; }
+
+@keyframes coer-pulse-glow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(127, 180, 214, 0.5)); }
+  50% { filter: drop-shadow(0 0 14px rgba(127, 180, 214, 0.95)); }
+}
+.coer-pulse-glow { animation: coer-pulse-glow 2.4s ease-in-out infinite; }
+
+@keyframes coer-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+.coer-blink { animation: coer-blink 1s steps(2) infinite; }
+
+@keyframes coer-ember-rise {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  20% { opacity: 0.9; }
+  100% { transform: translateY(-80px) translateX(12px); opacity: 0; }
+}
+
+@keyframes coer-road-pulse {
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.32; }
+}
+
+.coer-scroll::-webkit-scrollbar { display: block; width: 6px; }
+.coer-scroll::-webkit-scrollbar-thumb { background: rgba(216, 178, 90, 0.4); border-radius: 3px; }
+.coer-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Hide scrollbar by default for native mobile feel (game uses .coer-scroll where needed) */
+::-webkit-scrollbar {
+  display: none;
+}
