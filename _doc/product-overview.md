@@ -168,7 +168,8 @@ Composition stays polished even with placeholder art.
   feeling of HD-2D turn-based fantasy without any copyrighted content.
 - **Playable, not a mockup** — interactive movement, real combat, real story flow; never a
   static landing page, menu-only shell, or card game; never sci-fi.
-- **Atmosphere and game feel first** — every screen looks intentional and cinematic.
+- **Atmosphere and game feel first** — every screen looks intentional and cinematic, in
+  service of the emotional north star: lonely, hunted, but destined for something bigger.
 - **A slice that scales** — one fully realized path (Kael, Chapter 1) and a clean,
   data-driven foundation ready to grow into all eight travelers and chapters.
 - **Implementation priority when constrained:** playable exploration → dialogue & quest
