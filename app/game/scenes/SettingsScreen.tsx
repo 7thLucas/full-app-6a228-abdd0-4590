@@ -1,153 +1,116 @@
-import { useConfigurables } from "~/modules/configurables";
-import { useGame } from "../engine/store";
-import { Heading, GoldButton, Panel, KeyHint } from "../ui/primitives";
+import { useGame, type Settings } from "../engine/store";
 import { setAudioLevels, sfx } from "../engine/sfx";
+import { MenuShell } from "./Wordbook";
 
-export function SettingsScreen({ onBack }: { onBack: () => void }) {
+// Accessibility + game settings.
+export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const game = useGame();
-  const { settings, setSettings } = game;
+  const { settings } = game;
 
-  const update = (patch: Partial<typeof settings>) => {
-    setSettings(patch);
-    const next = { ...settings, ...patch };
-    setAudioLevels(next.master, next.sfx);
-  };
+  function toggle(key: keyof Settings, value: boolean) {
+    game.setSettings({ [key]: value } as Partial<Settings>);
+    sfx("select");
+  }
 
   return (
-    <Overlay title="Settings" onBack={onBack}>
-      <div className="space-y-4">
-        <Slider
-          label="Master Volume (placeholder mix)"
-          value={settings.master}
-          onChange={(v) => update({ master: v })}
+    <MenuShell title="Settings" onClose={onClose}>
+      <div className="grid gap-2.5 max-w-[480px] mx-auto">
+        <Toggle
+          label="Show romanization"
+          hint="Display romanized pronunciation (recommended for beginners)"
+          value={settings.showRomanization}
+          onChange={(v) => toggle("showRomanization", v)}
         />
-        <Slider
-          label="Music — Theme Placeholder"
-          value={settings.music}
-          onChange={(v) => update({ music: v })}
+        <Toggle
+          label="Show English hint"
+          hint="Show English meaning alongside Korean"
+          value={settings.showEnglishHint}
+          onChange={(v) => toggle("showEnglishHint", v)}
         />
-        <Slider label="SFX" value={settings.sfx} onChange={(v) => { update({ sfx: v }); sfx("select"); }} />
+        <Toggle
+          label="Slow mode"
+          hint="Extra time and gentler pacing"
+          value={settings.slowMode}
+          onChange={(v) => toggle("slowMode", v)}
+        />
+        <Toggle
+          label="Larger text"
+          hint="Bigger Korean and answer text"
+          value={settings.largerText}
+          onChange={(v) => toggle("largerText", v)}
+        />
+        <Toggle
+          label="Sound"
+          hint="Procedural sound effects"
+          value={settings.sound}
+          onChange={(v) => {
+            setAudioLevels(v ? 70 : 0, v ? 80 : 0);
+            toggle("sound", v);
+          }}
+        />
 
-        <div>
-          <div className="text-xs text-[#bfb59c] mb-1.5 uppercase tracking-wider">Text Speed</div>
+        <div className="coer-panel p-3">
+          <div className="text-sm text-[#ece6d6] mb-2">Text speed</div>
           <div className="flex gap-2">
             {(["slow", "normal", "fast"] as const).map((s) => (
-              <GoldButton
+              <button
                 key={s}
-                active={settings.textSpeed === s}
-                onClick={() => { setSettings({ textSpeed: s }); sfx("advance"); }}
-                className="capitalize px-4"
+                type="button"
+                onClick={() => {
+                  game.setSettings({ textSpeed: s });
+                  sfx("select");
+                }}
+                className={`flex-1 rounded border px-3 py-2 text-sm capitalize ${
+                  settings.textSpeed === s ? "border-[#e9cf86] text-[#e9cf86]" : "border-[rgba(216,178,90,0.3)] text-[#bfb59c]"
+                }`}
               >
                 {s}
-              </GoldButton>
+              </button>
             ))}
           </div>
         </div>
 
-        <div>
-          <div className="text-xs text-[#bfb59c] mb-1.5 uppercase tracking-wider">Controls</div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-            <KeyHint keys="WASD / ←↑↓→" label="Move" />
-            <KeyHint keys="Shift" label="Dash" />
-            <KeyHint keys="E / Enter" label="Interact" />
-            <KeyHint keys="Space" label="Advance dialogue" />
-            <KeyHint keys="Esc" label="Menu" />
-            <KeyHint keys="Click" label="UI / commands" />
+        <div className="coer-panel p-3 flex items-center justify-between">
+          <div>
+            <div className="text-sm text-[#ece6d6]">Background music</div>
+            <div className="text-[11px] text-[#bfb59c]">Village Theme Placeholder</div>
           </div>
+          <span className="text-[11px] text-[#bfb59c]">(placeholder)</span>
         </div>
       </div>
-    </Overlay>
+    </MenuShell>
   );
 }
 
-export function CreditsScreen({ onBack }: { onBack: () => void }) {
-  const { config } = useConfigurables();
-  return (
-    <Overlay title={config.creditsLabel || "Credits"} onBack={onBack}>
-      <div className="space-y-3 text-sm text-[#cdbf9a] leading-relaxed">
-        <p>{config.creditsBody}</p>
-        <div className="pt-2 border-t border-white/10 space-y-1 text-[13px]">
-          <CreditRow role="World & Story" name="Asterra — The Eight Roads" />
-          <CreditRow role="Chapter" name="The Ashen Oath (Kael, Chapter 1)" />
-          <CreditRow role="Systems" name="Guard Shatter · Momentum · Turn-based Combat" />
-          <CreditRow role="Art" name="Original placeholder pixel sprites (SVG/CSS)" />
-          <CreditRow role="Audio" name="Procedural placeholder SFX" />
-        </div>
-        <p className="text-[11px] text-[#7c745f] italic pt-2">
-          A genre homage — all characters, names, world, and assets are original.
-        </p>
-      </div>
-    </Overlay>
-  );
-}
-
-function CreditRow({ role, name }: { role: string; name: string }) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-[#bfb59c]">{role}</span>
-      <span className="text-[#ece6d6] text-right ml-3">{name}</span>
-    </div>
-  );
-}
-
-function Overlay({
-  title,
-  onBack,
-  children,
-}: {
-  title: string;
-  onBack: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "radial-gradient(ellipse at 50% 0%, #161f38 0%, #0a0f1f 60%, #05070f 100%)",
-        }}
-      />
-      <div className="coer-vignette" style={{ position: "absolute", inset: 0 }} />
-      <div style={{ position: "absolute", inset: 0, zIndex: 30 }} className="flex items-center justify-center p-6">
-        <Panel className="w-full max-w-lg p-6">
-          <Heading className="text-2xl mb-4 text-center">{title}</Heading>
-          {children}
-          <div className="mt-6 text-center">
-            <GoldButton onClick={() => { sfx("select"); onBack(); }} active className="px-6">
-              Back
-            </GoldButton>
-          </div>
-        </Panel>
-      </div>
-    </div>
-  );
-}
-
-function Slider({
+function Toggle({
   label,
+  hint,
   value,
   onChange,
 }: {
   label: string;
-  value: number;
-  onChange: (v: number) => void;
+  hint: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
 }) {
   return (
-    <div>
-      <div className="flex justify-between text-xs text-[#bfb59c] mb-1.5">
-        <span className="uppercase tracking-wider">{label}</span>
-        <span className="text-[#e9cf86]">{value}</span>
+    <div className="coer-panel p-3 flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-sm text-[#ece6d6]">{label}</div>
+        <div className="text-[11px] text-[#bfb59c]">{hint}</div>
       </div>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-[#d8b25a]"
-        style={{ accentColor: "#d8b25a" }}
-      />
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        className={`shrink-0 w-12 h-6 rounded-full border transition-all relative ${
+          value ? "border-[#e9cf86] bg-[rgba(216,178,90,0.3)]" : "border-[rgba(216,178,90,0.3)] bg-black/40"
+        }`}
+      >
+        <span
+          className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+          style={{ left: value ? 26 : 3, background: value ? "#e9cf86" : "#6a6458" }}
+        />
+      </button>
     </div>
   );
 }

@@ -1,201 +1,99 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DialogueSequence, PortraitKind } from "../data/types";
-import { Sprite } from "../visual/Sprite";
-import { sfx } from "../engine/sfx";
+import { useEffect, useRef, useState } from "react";
+import { Sprite, type SpriteKind } from "../visual/Sprite";
 
-const SPEED_MS: Record<string, number> = { slow: 42, normal: 22, fast: 8 };
-
-interface DialogueBoxProps {
-  sequence: DialogueSequence;
-  textSpeed: "slow" | "normal" | "fast";
-  onComplete: (lastChoice?: string) => void;
+export interface DialogueLine {
+  speaker: string;
+  portrait?: SpriteKind;
+  text: string;
+  korean?: string;
 }
 
-export function DialogueBox({ sequence, textSpeed, onComplete }: DialogueBoxProps) {
-  const [lineIdx, setLineIdx] = useState(0);
+interface DialogueBoxProps {
+  lines: DialogueLine[];
+  textSpeed: "slow" | "normal" | "fast";
+  onComplete: () => void;
+}
+
+const SPEEDS = { slow: 55, normal: 28, fast: 12 };
+
+// Typewriter dialogue panel anchored to the bottom of the viewport.
+export function DialogueBox({ lines, textSpeed, onComplete }: DialogueBoxProps) {
+  const [idx, setIdx] = useState(0);
   const [shown, setShown] = useState("");
   const [done, setDone] = useState(false);
-  const charRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const line = sequence.lines[lineIdx];
-  const fullText = line?.text ?? "";
+  const line = lines[idx];
 
-  const clearTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  // typewriter
   useEffect(() => {
+    if (!line) return;
     setShown("");
     setDone(false);
-    charRef.current = 0;
-    clearTimer();
-    const ms = SPEED_MS[textSpeed] ?? 22;
+    let i = 0;
+    const full = line.text;
     timerRef.current = setInterval(() => {
-      charRef.current += 1;
-      setShown(fullText.slice(0, charRef.current));
-      if (charRef.current % 2 === 0) sfx("advance");
-      if (charRef.current >= fullText.length) {
-        clearTimer();
+      i += 1;
+      setShown(full.slice(0, i));
+      if (i >= full.length) {
+        if (timerRef.current) clearInterval(timerRef.current);
         setDone(true);
       }
-    }, ms);
-    return clearTimer;
-  }, [lineIdx, sequence.id]);
+    }, SPEEDS[textSpeed]);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [idx, line, textSpeed]);
 
-  const advance = useCallback(() => {
+  const advance = () => {
     if (!done) {
-      // reveal full line instantly
-      clearTimer();
-      setShown(fullText);
+      if (timerRef.current) clearInterval(timerRef.current);
+      setShown(line.text);
       setDone(true);
       return;
     }
-    if (line?.choices && line.choices.length > 0) return; // wait for choice click
-    if (lineIdx < sequence.lines.length - 1) {
-      sfx("select");
-      setLineIdx((i) => i + 1);
-    } else {
-      sfx("select");
-      onComplete();
-    }
-  }, [done, fullText, line, lineIdx, sequence.lines.length, onComplete]);
+    if (idx + 1 < lines.length) setIdx(idx + 1);
+    else onComplete();
+  };
 
-  // keyboard: space / enter advance
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const k = e.key.toLowerCase();
-      if (k === " " || k === "enter" || k === "e") {
+      if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
         advance();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advance]);
-
-  const speakerColor = useMemo(() => portraitTint(line?.portrait), [line?.portrait]);
+  });
 
   if (!line) return null;
 
   return (
     <div
-      style={{ position: "absolute", inset: 0, zIndex: 60 }}
-      className="flex items-end justify-center"
+      className="absolute inset-x-0 bottom-0 z-40 p-3 sm:p-4 cursor-pointer"
       onClick={advance}
     >
-      {/* dim film */}
-      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)" }} />
-
-      <div
-        className="coer-panel coer-panel-frame coer-fade-in"
-        style={{
-          position: "relative",
-          width: "92%",
-          maxWidth: 760,
-          margin: "0 0 18px",
-          padding: "14px 18px 16px",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex gap-4">
-          {/* portrait */}
-          {line.portrait && line.portrait !== "none" && (
-            <div
-              className="shrink-0 rounded coer-flicker"
-              style={{
-                width: 78,
-                height: 78,
-                border: `1px solid ${speakerColor}`,
-                background: "radial-gradient(circle at 50% 40%, rgba(30,40,70,0.9), rgba(5,8,18,1))",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: `0 0 18px ${speakerColor}33`,
-              }}
-            >
-              <PortraitGlyph portrait={line.portrait} />
+      <div className="coer-panel coer-panel-frame mx-auto max-w-[760px] p-3 sm:p-4">
+        <div className="flex items-start gap-3">
+          {line.portrait && (
+            <div className="shrink-0 w-14 h-14 rounded border border-[rgba(216,178,90,0.4)] bg-black/40 flex items-center justify-center">
+              <Sprite kind={line.portrait} size={46} />
             </div>
           )}
-
-          <div className="flex-1 min-w-0">
-            {line.speaker && (
-              <div
-                className="coer-heading text-sm mb-1"
-                style={{ color: speakerColor }}
-              >
-                {line.speaker}
+          <div className="min-w-0 flex-1">
+            <div className="coer-heading text-sm mb-1">{line.speaker}</div>
+            {line.korean && (
+              <div className="text-2xl text-[#ffe9a8] mb-1" style={{ textShadow: "0 0 14px rgba(255,220,140,0.6)" }}>
+                {line.korean}
               </div>
             )}
-            <p
-              className="text-[15px] leading-relaxed text-[#ece6d6]"
-              style={{ minHeight: 48, fontFamily: "'EB Garamond', serif" }}
-            >
-              {shown}
-              {!done && <span className="coer-blink">▍</span>}
-            </p>
-
-            {/* choices */}
-            {done && line.choices && line.choices.length > 0 && (
-              <div className="mt-2 flex flex-col gap-1.5">
-                {line.choices.map((c) => (
-                  <button
-                    key={c.label}
-                    type="button"
-                    onClick={() => {
-                      sfx("select");
-                      onComplete(c.label);
-                    }}
-                    className="coer-menu-item text-left text-sm px-3 py-1.5 rounded border border-[rgba(216,178,90,0.4)] hover:bg-[rgba(216,178,90,0.08)] text-[#ece6d6]"
-                  >
-                    ▸ {c.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* continue indicator */}
-            {done && (!line.choices || line.choices.length === 0) && (
-              <div className="flex justify-end mt-1">
-                <span className="coer-blink text-[#e9cf86] text-lg">▼</span>
-              </div>
-            )}
+            <p className="text-[15px] leading-relaxed text-[#ece6d6]">{shown}</p>
           </div>
+        </div>
+        <div className="mt-2 text-right text-[11px] text-[#bfb59c]">
+          {done ? (idx + 1 < lines.length ? "▶ Space / Click" : "✓ Space / Click") : "…"}
         </div>
       </div>
     </div>
   );
-}
-
-function portraitTint(p?: PortraitKind): string {
-  switch (p) {
-    case "kael":
-      return "#d8b25a";
-    case "edrin":
-      return "#a98fd0";
-    case "voice":
-      return "#c75bff";
-    case "merchant":
-      return "#6fc3a0";
-    default:
-      return "#cdbf9a";
-  }
-}
-
-function PortraitGlyph({ portrait }: { portrait: PortraitKind }) {
-  const kind =
-    portrait === "kael"
-      ? "kael"
-      : portrait === "edrin"
-        ? "edrin"
-        : portrait === "merchant"
-          ? "merchant"
-          : portrait === "voice"
-            ? "hollowGuard"
-            : "townsfolk";
-  return <Sprite kind={kind as never} size={62} />;
 }

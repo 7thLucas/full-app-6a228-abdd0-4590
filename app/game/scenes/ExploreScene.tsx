@@ -1,226 +1,106 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MapDef, MapInteractable } from "../data/types";
-import { getMap, SHRINE_GATE } from "../data/maps";
+import { getArea, type AreaId, type NpcDef } from "../data/gameData";
 import { useGame } from "../engine/store";
-import { useInput, type ActionKey } from "../engine/useInput";
-import { Sprite, type SpriteKind } from "../visual/Sprite";
+import { useInput } from "../engine/useInput";
 import { PixelCharacter } from "../visual/PixelCharacter";
 import { Diorama } from "../visual/Diorama";
 import { Atmosphere } from "../visual/Atmosphere";
-import {
-  sceneLayout,
-  projectPixel,
-  projectTile,
-  cameraFor,
-  corridorAxis,
-  type SceneLayout,
-} from "../visual/hd2d";
+import { Sprite, type SpriteKind } from "../visual/Sprite";
 import { sfx } from "../engine/sfx";
 
-const SPEED = 4.2; // px per frame at base
-const DASH_MULT = 1.7;
+const SPEED = 5.0; // px per frame
+const DASH = 1.7;
+const LANE_Y = 0.82; // baseline (feet) fraction
+const PAD = 180;
 
 interface ExploreSceneProps {
+  area: AreaId;
   viewportW: number;
   viewportH: number;
-  onInteract: (it: MapInteractable, map: MapDef) => void;
-  onEnterArea: (map: MapDef) => void;
   paused: boolean;
-  shakeKey: number;
+  onInteractNpc: (npc: NpcDef) => void;
+  onExit: (to: AreaId, label: string) => void;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HD-2D SIDE-VIEW EXPLORE
-// The gameplay engine (collision grid, interactable tile coords, quest/door
-// triggers) is unchanged — the player still lives in pixel space over the tile
-// grid. We REMAP input (A/D -> horizontal tile-x, W/S -> depth tile-y) and
-// PROJECT every world position into a cinematic side-view diorama. No top-down
-// camera, no grid, no tiny icons.
-// ─────────────────────────────────────────────────────────────────────────────
-export function ExploreScene({
-  viewportW,
-  viewportH,
-  onInteract,
-  onEnterArea,
-  paused,
-  shakeKey,
-}: ExploreSceneProps) {
+// HD-2D side-view explore: Arin walks left/right along a cinematic lane; the
+// camera pans horizontally; NPCs sit along the lane and are interacted with E.
+export function ExploreScene({ area, viewportW, viewportH, paused, onInteractNpc, onExit }: ExploreSceneProps) {
   const game = useGame();
-  const map = getMap(game.state.world.area);
-  const ts = map.tileSize;
+  const def = getArea(area);
 
-  const layout = useMemo<SceneLayout>(() => sceneLayout(map, viewportW), [map.id, viewportW]);
+  // world is wider than the viewport so the camera glides.
+  const worldWidth = Math.max(viewportW * 1.9, 1500);
+  const usable = worldWidth - PAD * 2;
 
-  const posRef = useRef({
-    x: game.state.world.x * ts + ts / 2,
-    y: game.state.world.y * ts + ts / 2,
-  });
-  // Facing in the side-view is only left/right.
-  const facingRef = useRef<"left" | "right">(
-    game.state.world.facing === "left" ? "left" : "right",
-  );
+  // NPC stage x positions
+  const npcX = useMemo(() => def.npcs.map((n) => PAD + n.atFrac * usable), [def, usable]);
+  const exitX = PAD + 0.92 * usable;
+
+  const posRef = useRef(PAD + 0.08 * usable);
+  const facingRef = useRef<"left" | "right">("right");
   const movingRef = useRef(false);
   const camRef = useRef(0);
-  const rafRef = useRef<number>(0);
-  const lastAreaRef = useRef(map.id);
+  const rafRef = useRef(0);
+  const [, setTick] = useState(0);
+  const [nearby, setNearby] = useState<{ kind: "npc" | "exit"; idx: number } | null>(null);
 
-  const [, setRenderTick] = useState(0);
-  const [nearby, setNearby] = useState<MapInteractable | null>(null);
-
-  // Reset position when the area changes (after a door transition).
+  // reset on area change
   useEffect(() => {
-    if (lastAreaRef.current !== map.id) {
-      lastAreaRef.current = map.id;
-    }
-    posRef.current = {
-      x: game.state.world.x * ts + ts / 2,
-      y: game.state.world.y * ts + ts / 2,
-    };
-    facingRef.current = game.state.world.facing === "left" ? "left" : "right";
-    // snap camera to player so the new area doesn't slide in jarringly
-    const p = projectPixel(map, layout, posRef.current.x, posRef.current.y);
-    camRef.current = cameraFor(p.worldX, layout.worldWidth, viewportW);
-    onEnterArea(map);
-  }, [map.id]);
+    posRef.current = PAD + 0.08 * usable;
+    facingRef.current = "right";
+    camRef.current = clamp(posRef.current - viewportW / 2, 0, Math.max(0, worldWidth - viewportW));
+    setTick((t) => t + 1);
+  }, [area, usable, viewportW, worldWidth]);
 
-  const isBlocked = useCallback(
-    (tileX: number, tileY: number): boolean => {
-      if (tileX < 0 || tileY < 0 || tileX >= map.width || tileY >= map.height) return true;
-      if (map.collision[tileY][tileX] === 1) return true;
-      if (
-        map.theme === "shrine" &&
-        tileY === SHRINE_GATE.row &&
-        SHRINE_GATE.cols.includes(tileX) &&
-        !game.state.flags.shrineGateOpen
-      ) {
-        return true;
-      }
-      const solid = activeInteractables(map, game.state.flags).find(
-        (it) =>
-          it.x === tileX &&
-          it.y === tileY &&
-          it.kind !== "door" &&
-          it.kind !== "encounter" &&
-          it.kind !== "boss",
-      );
-      if (solid) return true;
-      return false;
-    },
-    [map, game.state.flags],
-  );
-
-  // Find the interactable the player faces / stands adjacent to.
-  const findNearby = useCallback((): MapInteractable | null => {
-    const px = Math.floor(posRef.current.x / ts);
-    const py = Math.floor(posRef.current.y / ts);
-    const items = activeInteractables(map, game.state.flags);
-    // Check the current tile and all 8 neighbours — interactables sit close on
-    // the lane, and corridor orientation differs per map, so a full ring is the
-    // most forgiving for the player.
-    const candidates: { x: number; y: number }[] = [{ x: px, y: py }];
-    for (let oy = -1; oy <= 1; oy++) {
-      for (let ox = -1; ox <= 1; ox++) {
-        if (ox === 0 && oy === 0) continue;
-        candidates.push({ x: px + ox, y: py + oy });
-      }
+  const findNearby = useCallback((): { kind: "npc" | "exit"; idx: number } | null => {
+    const px = posRef.current;
+    type Cand = { kind: "npc" | "exit"; idx: number; d: number };
+    const cands: Cand[] = [];
+    npcX.forEach((x, i) => {
+      const d = Math.abs(x - px);
+      if (d < 90) cands.push({ kind: "npc", idx: i, d });
+    });
+    if (def.exitTo) {
+      const d = Math.abs(exitX - px);
+      if (d < 90) cands.push({ kind: "exit", idx: 0, d });
     }
-    for (const c of candidates) {
-      const hit = items.find((it) => it.x === c.x && it.y === c.y);
-      if (hit) return hit;
-    }
-    return null;
-  }, [map, ts, game.state.flags]);
+    if (cands.length === 0) return null;
+    const best = cands.reduce((a, b) => (b.d < a.d ? b : a));
+    return { kind: best.kind, idx: best.idx };
+  }, [npcX, exitX, def.exitTo]);
 
   const input = useInput({
     enabled: !paused,
-    onAction: (a: ActionKey) => {
+    onAction: (a) => {
       if (paused) return;
       if (a === "interact" || a === "advance") {
         const hit = findNearby();
-        if (hit) {
-          sfx("select");
-          const px = Math.floor(posRef.current.x / ts);
-          const py = Math.floor(posRef.current.y / ts);
-          game.setPlayerTile(px, py, facingRef.current);
-          onInteract(hit, map);
-        }
+        if (!hit) return;
+        sfx("select");
+        if (hit.kind === "npc") onInteractNpc(def.npcs[hit.idx]);
+        else if (def.exitTo) onExit(def.exitTo, def.exitLabel ?? "");
       }
     },
   });
 
-  // Auto-trigger encounters/doors when stepping onto their tile.
-  const handleStepTriggers = useCallback(() => {
-    const px = Math.floor(posRef.current.x / ts);
-    const py = Math.floor(posRef.current.y / ts);
-    const items = activeInteractables(map, game.state.flags);
-    const hit = items.find((it) => it.x === px && it.y === py);
-    if (!hit) return;
-    if (hit.kind === "door" || hit.kind === "encounter" || hit.kind === "boss") {
-      game.setPlayerTile(px, py, facingRef.current);
-      onInteract(hit, map);
-    }
-  }, [map, ts, game, onInteract]);
-
-  // Game loop.
   useEffect(() => {
     let running = true;
     function loop() {
       if (!running) return;
       if (!paused) {
         const inp = input.current;
-        // SIDE-VIEW MAPPING (corridor-axis aware):
-        //   A/D (left/right) -> travel ALONG the corridor
-        //   W/S (up/down)    -> shallow DEPTH move (into/out of the scene)
-        // For tall maps the corridor runs along tile-Y, so A/D drives Y and W/S
-        // drives X. For wide maps it's the reverse. Facing is always horizontal.
-        const along = (inp.right ? 1 : 0) - (inp.left ? 1 : 0); // +1 = forward
-        const depth = (inp.down ? 1 : 0) - (inp.up ? 1 : 0); // +1 = toward camera
-
-        movingRef.current = along !== 0 || depth !== 0;
-
-        if (along !== 0 || depth !== 0) {
-          if (along > 0) facingRef.current = "right";
-          else if (along < 0) facingRef.current = "left";
-
-          const axis = corridorAxis(map);
-          const speed = SPEED * (inp.dash ? DASH_MULT : 1);
-          const depthSpeed = speed * 0.7;
-
-          // dTileX / dTileY in pixel space depending on corridor orientation.
-          let dPxX: number;
-          let dPxY: number;
-          if (axis === "y") {
-            // along -> +tileY (forward = down the rows); depth -> +tileX
-            dPxX = depth * depthSpeed;
-            dPxY = along * speed;
-          } else {
-            // along -> +tileX; depth -> +tileY (toward camera = +y)
-            dPxX = along * speed;
-            dPxY = depth * depthSpeed;
-          }
-
-          const nx = posRef.current.x + dPxX;
-          const ny = posRef.current.y + dPxY;
-
-          const half = ts * 0.32;
-          if (!collides(nx, posRef.current.y, half, isBlocked, ts)) {
-            posRef.current.x = nx;
-          }
-          if (!collides(posRef.current.x, ny, half, isBlocked, ts)) {
-            posRef.current.y = ny;
-          }
-          handleStepTriggers();
+        const dir = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+        movingRef.current = dir !== 0;
+        if (dir !== 0) {
+          facingRef.current = dir > 0 ? "right" : "left";
+          const speed = SPEED * (inp.dash ? DASH : 1);
+          posRef.current = clamp(posRef.current + dir * speed, PAD - 40, worldWidth - PAD + 40);
         }
-
-        // camera: horizontal pan following the projected player worldX
-        const proj = projectPixel(map, layout, posRef.current.x, posRef.current.y);
-        const targetCam = cameraFor(proj.worldX, layout.worldWidth, viewportW);
-        camRef.current += (targetCam - camRef.current) * 0.12;
-
+        const target = clamp(posRef.current - viewportW / 2, 0, Math.max(0, worldWidth - viewportW));
+        camRef.current += (target - camRef.current) * 0.12;
         const n = findNearby();
-        setNearby((prev) => (prev?.id === n?.id ? prev : n));
-
-        setRenderTick((t) => (t + 1) % 1000000);
+        setNearby((prev) => (prev?.kind === n?.kind && prev?.idx === n?.idx ? prev : n));
+        setTick((t) => (t + 1) % 1000000);
       }
       rafRef.current = requestAnimationFrame(loop);
     }
@@ -229,14 +109,9 @@ export function ExploreScene({
       running = false;
       cancelAnimationFrame(rafRef.current);
     };
-  }, [map.id, paused, viewportW, viewportH, layout]);
+  }, [area, paused, viewportW, worldWidth, findNearby]);
 
   const camX = camRef.current;
-  const items = activeInteractables(map, game.state.flags);
-
-  const playerProj = projectPixel(map, layout, posRef.current.x, posRef.current.y);
-
-  // Stage container is translated by camera; actors live in stage space.
   const stageStyle: React.CSSProperties = {
     position: "absolute",
     inset: 0,
@@ -244,74 +119,86 @@ export function ExploreScene({
     willChange: "transform",
   };
 
+  const completed = game.progress.completedLessons;
+
   return (
-    <div
-      className={shakeKey ? "coer-shake" : undefined}
-      key={`shake-${shakeKey}`}
-      style={{ position: "absolute", inset: 0, overflow: "hidden" }}
-    >
-      {/* 5-layer diorama backdrop (handles its own internal parallax) */}
+    <div className="absolute inset-0 overflow-hidden">
       <Diorama
-        map={map}
+        theme={def.theme}
         camX={camX}
-        worldWidth={layout.worldWidth}
+        worldWidth={worldWidth}
         viewportW={viewportW}
         viewportH={viewportH}
-        laneBottomFrac={layout.laneTopY}
+        laneBottomFrac={LANE_Y}
       />
 
-      {/* MIDGROUND: interactables + player, depth-sorted, projected to side-view */}
       <div style={stageStyle}>
-        {items.map((it) => {
-          const p = projectTile(map, layout, it.x, it.y);
+        {/* NPCs / lesson objects */}
+        {def.npcs.map((n, i) => {
+          const isLessonDone = n.lessonId ? completed.includes(n.lessonId) : false;
           return (
-            <InteractableActor
-              key={it.id}
-              it={it}
-              worldX={p.worldX}
-              screenYFrac={p.screenYFrac}
+            <NpcActor
+              key={n.id}
+              npc={n}
+              worldX={npcX[i]}
               viewportH={viewportH}
-              scale={p.scale}
-              z={15 + Math.round((1 - p.depth) * 60)}
-              highlight={nearby?.id === it.id}
+              highlight={nearby?.kind === "npc" && nearby.idx === i}
+              done={isLessonDone}
             />
           );
         })}
 
+        {/* exit gate marker */}
+        {def.exitTo && (
+          <div
+            style={{
+              position: "absolute",
+              left: exitX,
+              top: LANE_Y * viewportH,
+              transform: "translate(-50%,-100%)",
+              zIndex: 18,
+            }}
+            className={nearby?.kind === "exit" ? "" : "opacity-90"}
+          >
+            <div
+              className="coer-bob flex flex-col items-center"
+              style={{ filter: "drop-shadow(0 0 14px rgba(255,220,140,0.6))" }}
+            >
+              <div className="text-3xl">⛩️</div>
+              <div className="mt-1 px-2 py-0.5 rounded bg-black/60 border border-[rgba(216,178,90,0.5)] text-[11px] text-[#e9cf86] whitespace-nowrap">
+                → {def.exitLabel}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* player */}
         <PixelCharacter
-          kind="kael"
-          baseSize={ts * 2.1}
-          worldX={playerProj.worldX}
-          screenYFrac={playerProj.screenYFrac}
+          kind="arin"
+          baseSize={150}
+          worldX={posRef.current}
+          screenYFrac={LANE_Y}
           viewportH={viewportH}
-          scale={playerProj.scale}
+          scale={1}
           facing={facingRef.current}
           moving={movingRef.current && !paused}
-          z={16 + Math.round((1 - playerProj.depth) * 60)}
+          z={20}
         />
       </div>
 
-      {/* particles / fog over everything but UI */}
-      <Atmosphere theme={map.theme} />
+      <Atmosphere theme={def.theme} />
 
       {/* interaction prompt */}
       {nearby && !paused && (
         <div
-          className="coer-fade-in"
-          style={{
-            position: "absolute",
-            bottom: 70,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 40,
-          }}
+          className="coer-fade-in absolute z-40"
+          style={{ bottom: 70, left: "50%", transform: "translateX(-50%)" }}
         >
-          <div className="px-3 py-1.5 rounded border border-[rgba(216,178,90,0.5)] bg-black/70 text-xs text-[#e9cf86] flex items-center gap-2 shadow-[0_0_18px_rgba(216,178,90,0.2)]">
-            <kbd className="px-1.5 py-0.5 rounded border border-[rgba(216,178,90,0.4)] bg-black/50 font-mono text-[10px]">
-              E
-            </kbd>
-            {promptVerb(nearby)} {nearby.label}
+          <div className="px-3 py-1.5 rounded border border-[rgba(216,178,90,0.5)] bg-black/70 text-xs text-[#e9cf86] flex items-center gap-2">
+            <kbd className="px-1.5 py-0.5 rounded border border-[rgba(216,178,90,0.4)] bg-black/50 font-mono text-[10px]">E</kbd>
+            {nearby.kind === "npc"
+              ? `${def.npcs[nearby.idx].lessonId && completed.includes(def.npcs[nearby.idx].lessonId!) ? "Talk again to" : "Talk to"} ${def.npcs[nearby.idx].name}`
+              : `Travel to ${def.exitLabel}`}
           </div>
         </div>
       )}
@@ -319,97 +206,101 @@ export function ExploreScene({
   );
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-function activeInteractables(map: MapDef, flags: Record<string, boolean>): MapInteractable[] {
-  return map.interactables.filter((it) => {
-    if (it.flagRequired && !flags[it.flagRequired]) return false;
-    if (it.flagBlocks && flags[it.flagBlocks]) return false;
-    if (it.oneShotFlag && flags[it.oneShotFlag] && it.kind !== "save" && it.kind !== "shop")
-      return false;
-    return true;
-  });
-}
-
-function collides(
-  cx: number,
-  cy: number,
-  half: number,
-  isBlocked: (tx: number, ty: number) => boolean,
-  ts: number,
-): boolean {
-  const corners = [
-    [cx - half, cy - half],
-    [cx + half, cy - half],
-    [cx - half, cy + half],
-    [cx + half, cy + half],
-  ];
-  return corners.some(([x, y]) => isBlocked(Math.floor(x / ts), Math.floor(y / ts)));
-}
-
-function promptVerb(it: MapInteractable): string {
-  switch (it.kind) {
-    case "npc":
-      return "Talk to";
-    case "chest":
-      return "Open";
-    case "door":
-      return "Enter";
-    case "save":
-      return "Touch";
-    case "shop":
-      return "Trade with";
-    case "lever":
-      return "Pull";
-    default:
-      return "Examine";
-  }
-}
-
-// An interactable rendered as an upright side-view prop/NPC/enemy on the lane.
-function InteractableActor({
-  it,
+function NpcActor({
+  npc,
   worldX,
-  screenYFrac,
   viewportH,
-  scale,
-  z,
   highlight,
+  done,
 }: {
-  it: MapInteractable;
+  npc: NpcDef;
   worldX: number;
-  screenYFrac: number;
   viewportH: number;
-  scale: number;
-  z: number;
   highlight: boolean;
+  done: boolean;
 }) {
-  const kind = (it.sprite ?? "door") as SpriteKind;
-  const isCharacter = it.kind === "npc" || it.kind === "shop";
-  const isEnemyPreview = it.kind === "encounter" || it.kind === "boss";
-  const glow = it.kind === "save";
-  const bob = it.kind === "save" || isCharacter;
+  const isLetter = npc.id.startsWith("letter-") || npc.id === "stone-tablet";
+  if (isLetter) {
+    const char = npc.id === "letter-a" ? "ㅏ" : npc.id === "letter-eo" ? "ㅓ" : "가";
+    return (
+      <div
+        style={{ position: "absolute", left: worldX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}
+      >
+        {highlight && <Pointer />}
+        <div
+          className="coer-bob flex flex-col items-center"
+          style={{ filter: `drop-shadow(0 0 18px ${done ? "rgba(110,231,183,0.6)" : "rgba(255,220,140,0.8)"})` }}
+        >
+          {npc.id === "stone-tablet" ? (
+            <Sprite kind="tablet" size={84} />
+          ) : (
+            <div
+              className="text-5xl"
+              style={{ color: done ? "#9ff0c8" : "#ffe9a8", textShadow: "0 0 22px rgba(255,220,140,0.9)" }}
+            >
+              {char}
+            </div>
+          )}
+          {done && <div className="text-emerald-300 text-xs mt-0.5">✓ learned</div>}
+        </div>
+      </div>
+    );
+  }
 
-  // characters face the player roughly (face left, toward centre-left spawn)
-  const facing = isCharacter ? "left" : "right";
-  const baseSize = isEnemyPreview ? 120 : 96;
+  const sprite: SpriteKind =
+    npc.sprite === "bori"
+      ? "bori"
+      : npc.sprite === "shopkeeper"
+      ? "shopkeeper"
+      : npc.sprite === "guard"
+      ? "guard"
+      : npc.sprite === "child"
+      ? "child"
+      : "elder";
 
   return (
-    <PixelCharacter
-      kind={kind}
-      baseSize={baseSize}
-      worldX={worldX}
-      screenYFrac={screenYFrac}
-      viewportH={viewportH}
-      scale={scale}
-      facing={facing as "left" | "right"}
-      moving={false}
-      bob={bob}
-      glow={glow}
-      z={z}
-      highlight={highlight}
+    <div style={{ position: "absolute", left: worldX, top: LANE_Y * viewportH, transform: "translate(-50%,-100%)", zIndex: 18 }}>
+      {highlight && <Pointer />}
+      <div className="flex flex-col items-center">
+        <PixelCharacter
+          kind={sprite}
+          baseSize={130}
+          worldX={0}
+          screenYFrac={1}
+          viewportH={130}
+          scale={1}
+          facing="left"
+          bob={npc.sprite === "bori"}
+          glow={npc.sprite === "bori"}
+          z={1}
+        />
+        {done && <div className="text-emerald-300 text-[11px] -mt-1">✓</div>}
+      </div>
+    </div>
+  );
+}
+
+function Pointer() {
+  return (
+    <div
+      className="coer-blink"
+      style={{
+        position: "absolute",
+        left: "50%",
+        top: -18,
+        transform: "translateX(-50%)",
+        width: 0,
+        height: 0,
+        borderLeft: "8px solid transparent",
+        borderRight: "8px solid transparent",
+        borderTop: "11px solid rgba(233,207,134,0.95)",
+        filter: "drop-shadow(0 0 6px rgba(233,207,134,0.8))",
+        zIndex: 30,
+      }}
     />
   );
 }
 
-// keep Sprite import used (InteractableActor relies on SpriteKind typing)
-void Sprite;
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}

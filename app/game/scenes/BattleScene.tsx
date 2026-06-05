@@ -1,1032 +1,407 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ElementId } from "../data/types";
-import { getEnemy } from "../data/enemies";
-import { getSkill } from "../data/skills";
-import { getItem } from "../data/items";
+import { useMemo, useRef, useState } from "react";
+import { getEnemy, type EnemyDef, type AreaTheme } from "../data/gameData";
+import { getQuestion, getVocab, XP } from "../data/learningData";
 import { useGame } from "../engine/store";
-import { applyExp } from "../engine/state";
-import { effectiveStats } from "../engine/state";
-import {
-  makeEnemyRuntime,
-  computeDamageToEnemy,
-  computeDamageToPlayer,
-  pickEnemySkill,
-  affinityOf,
-  fleeChance,
-  MOMENTUM_BONUS,
-  MAX_MOMENTUM,
-  type EnemyRuntime,
-} from "../engine/combat";
-import { Sprite } from "../visual/Sprite";
+import { Diorama } from "../visual/Diorama";
 import { Atmosphere } from "../visual/Atmosphere";
-import { Panel, Heading, StatBar, GoldButton } from "../ui/primitives";
+import { PixelCharacter } from "../visual/PixelCharacter";
+import { Sprite } from "../visual/Sprite";
+import { GoldButton, StatBar } from "../ui/primitives";
 import { sfx } from "../engine/sfx";
-import { ELEMENT_META } from "../data/elements";
-
-type CommandTab = "root" | "skills" | "item" | "momentum";
-
-interface FloatNum {
-  id: number;
-  text: string;
-  color: string;
-  side: "player" | "enemy";
-  big?: boolean;
-}
 
 interface BattleSceneProps {
   enemyId: string;
-  isBoss: boolean;
-  onEnd: (result: "victory" | "defeat" | "flee", playerHp: number, playerSp: number) => void;
-  battleTheme?: "chapel" | "snow" | "town" | "shrine";
+  theme: AreaTheme;
+  viewportW: number;
+  viewportH: number;
+  onEnd: (victory: boolean, stats: { correct: number; xp: number }) => void;
 }
 
-// Cinematic side-view battle backdrop derived from the area theme.
-function battleStageStyle(
-  theme: "chapel" | "snow" | "town" | "shrine",
-  isBoss: boolean,
-): React.CSSProperties {
-  if (isBoss) {
-    return {
-      background:
-        "radial-gradient(ellipse at 50% 30%,#2a1840 0%,#160c28 55%,#070310 100%)",
-    };
-  }
-  switch (theme) {
-    case "snow":
-      return {
-        background:
-          "linear-gradient(180deg,#1a2740 0%,#3a4f6e 40%,#6b88a8 72%,#9fb4cb 100%)",
-      };
-    case "town":
-      return {
-        background:
-          "linear-gradient(180deg,#10182b 0%,#1b2740 45%,#33415c 80%,#475a78 100%)",
-      };
-    case "chapel":
-      return {
-        background:
-          "linear-gradient(180deg,#0a1322 0%,#101b30 40%,#241a12 78%,#100b07 100%)",
-      };
-    case "shrine":
-    default:
-      return {
-        background:
-          "radial-gradient(ellipse at 50% 32%,#13243c 0%,#0c1828 55%,#060c16 100%)",
-      };
-  }
+type Command = "word" | "sound" | "grammar" | "hint" | "review" | "item";
+
+// Fluency Combo multipliers
+const COMBO = [1, 1.2, 1.4, 1.7, 2.0];
+function comboMult(streak: number): number {
+  return COMBO[Math.min(streak, COMBO.length - 1)];
 }
 
-export function BattleScene({ enemyId, isBoss, onEnd, battleTheme = "snow" }: BattleSceneProps) {
+const BASE_DMG = 14;
+
+// Side-view HD-2D learning battle. Correct Korean answers attack; the enemy's
+// Confusion Shield (Meaning Break) must be broken; consecutive correct answers
+// build a Fluency Combo for escalating damage.
+export function BattleScene({ enemyId, theme, viewportW, viewportH, onEnd }: BattleSceneProps) {
   const game = useGame();
-  const player = game.state.player;
-  const eff = effectiveStats(player);
+  const { progress, settings } = game;
+  const enemy = getEnemy(enemyId) as EnemyDef;
 
-  const enemyRef = useRef<EnemyRuntime>(makeEnemyRuntime(enemyId));
-  const enemy = enemyRef.current;
-
-  // local combat state (HP/SP mutate; mirror into store on end)
-  const hpRef = useRef(player.hp);
-  const spRef = useRef(player.sp);
-  const [, force] = useReducer((n) => n + 1, 0);
-
-  const [turn, setTurn] = useState<"player" | "enemy">(
-    eff.spd >= enemy.def.stats.spd ? "player" : "enemy",
+  const questions = useMemo(
+    () => enemy.questionIds.map(getQuestion).filter(Boolean) as NonNullable<ReturnType<typeof getQuestion>>[],
+    [enemy],
   );
-  const [tab, setTab] = useState<CommandTab>("root");
-  const [momentum, setMomentum] = useState(eff.spd >= enemy.def.stats.spd ? 1 : 0);
-  const [spendLevel, setSpendLevel] = useState(0);
-  const [pendingAction, setPendingAction] = useState<
-    | { kind: "attack" }
-    | { kind: "skill"; id: string }
-    | null
-  >(null);
-  const [defUpTurns, setDefUpTurns] = useState(0);
-  const [log, setLog] = useState<string[]>([
-    `A ${enemy.def.name} blocks the path!`,
-  ]);
-  const [floats, setFloats] = useState<FloatNum[]>([]);
+
+  const [enemyHp, setEnemyHp] = useState(enemy.hp);
+  const [shield, setShield] = useState(enemy.confusionShield);
+  const [combo, setCombo] = useState(0);
+  const [meaningBreak, setMeaningBreak] = useState(false); // enemy loses next attack
+  const [exposed, setExposed] = useState(false); // boss: 3 in a row
+  const [correctRun, setCorrectRun] = useState(0);
+  const [playerHp, setPlayerHp] = useState(progress.hearts * 20);
+  const maxPlayerHp = progress.maxHearts * 20;
+
+  const [phase, setPhase] = useState<"command" | "question" | "result" | "over">("command");
+  const [activeCmd, setActiveCmd] = useState<Command>("word");
+  const qIdxRef = useRef(0);
+  const [currentQ, setCurrentQ] = useState(questions[0]);
+  const [log, setLog] = useState<string[]>([`A ${enemy.name} blocks the gate!`]);
+  const [floatDmg, setFloatDmg] = useState<{ id: number; n: number; crit: boolean } | null>(null);
+  const [glowWord, setGlowWord] = useState<string | null>(null);
   const [shake, setShake] = useState(0);
-  const [shatterFx, setShatterFx] = useState(0);
-  const [enemyHurt, setEnemyHurt] = useState(false);
-  const [playerHurt, setPlayerHurt] = useState(false);
-  const [slashFx, setSlashFx] = useState(0);
-  const [playerLunge, setPlayerLunge] = useState(false);
-  const [ended, setEnded] = useState<"victory" | "defeat" | "flee" | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [showBreak, setShowBreak] = useState(false);
+  const [correctTotal, setCorrectTotal] = useState(0);
+  const [xpTotal, setXpTotal] = useState(0);
+  const [usedHint, setUsedHint] = useState(false);
+  const [showHint, setShowHint] = useState(false);
   const floatId = useRef(0);
-  const logRef = useRef<HTMLDivElement>(null);
 
-  const pushLog = useCallback((msg: string) => {
-    setLog((l) => [...l, msg].slice(-40));
-  }, []);
+  function pushLog(s: string) {
+    setLog((l) => [...l.slice(-4), s]);
+  }
 
-  useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-  }, [log]);
+  function pickCommand(cmd: Command) {
+    if (phase !== "command") return;
+    sfx("select");
+    if (cmd === "hint") {
+      setShowHint(true);
+      setUsedHint(true);
+      pushLog("Bori whispers a hint... (XP bonus reduced)");
+      return;
+    }
+    if (cmd === "review") {
+      pushLog("You review your learned words. The turn passes.");
+      enemyTurn(false);
+      return;
+    }
+    if (cmd === "item") {
+      const charm = progress.inventory.memoryCharm ?? 0;
+      if (charm > 0) {
+        progress.inventory.memoryCharm -= 1;
+        setPlayerHp((h) => Math.min(maxPlayerHp, h + 20));
+        pushLog("You use a Memory Charm. +20 HP.");
+        game.forceUpdate();
+      } else {
+        pushLog("No usable items. (Buy some at the Shop!)");
+      }
+      return;
+    }
+    // word / sound / grammar -> ask a question
+    setActiveCmd(cmd);
+    const q = questions[qIdxRef.current % questions.length];
+    setCurrentQ(q);
+    setShowHint(false);
+    setUsedHint(false);
+    setPhase("question");
+  }
 
-  const addFloat = useCallback((f: Omit<FloatNum, "id">) => {
-    const id = floatId.current++;
-    setFloats((arr) => [...arr, { ...f, id }]);
-    setTimeout(() => setFloats((arr) => arr.filter((x) => x.id !== id)), 1100);
-  }, []);
+  function answer(opt: string) {
+    if (phase !== "question") return;
+    const q = currentQ;
+    const isCorrect = opt === q.answer;
+    qIdxRef.current += 1;
+    game.recordAnswer(q.vocabId, isCorrect);
 
-  // ── Player actions ─────────────────────────────────────────────────────────
-  const doDamage = useCallback(
-    (element: ElementId, power: number, label: string) => {
-      const res = computeDamageToEnemy({
-        atkStat: eff.atk,
-        power,
-        element,
-        critChance: eff.crit,
-        enemy,
-        momentumLevel: spendLevel,
-      });
-      enemy.hp = Math.max(0, enemy.hp - res.damage);
+    if (isCorrect) {
       sfx("hit");
-      setEnemyHurt(true);
-      setTimeout(() => setEnemyHurt(false), 220);
+      const newCombo = combo + 1;
+      setCombo(newCombo);
+      const run = correctRun + 1;
+      setCorrectRun(run);
+      setCorrectTotal((c) => c + 1);
+      let gain = XP.correct + (usedHint ? 0 : XP.noHintBonus);
+      game.addXp(gain);
+      setXpTotal((x) => x + gain);
+      game.bumpDaily("dq2");
+
+      // damage with combo + break + exposed bonuses
+      let dmg = BASE_DMG * comboMult(newCombo);
+      let crit = newCombo >= 4;
+      if (meaningBreak) {
+        dmg *= 1.6;
+        crit = true;
+        setMeaningBreak(false);
+      }
+      if (exposed) {
+        dmg *= 1.5;
+        crit = true;
+        setExposed(false);
+      }
+      dmg = Math.round(dmg);
+
+      // shield handling (Meaning Break)
+      let newShield = shield;
+      if (shield > 0) {
+        newShield = shield - 1;
+        setShield(newShield);
+        if (newShield === 0) {
+          setMeaningBreak(true);
+          setShowBreak(true);
+          sfx("shatter");
+          window.setTimeout(() => setShowBreak(false), 1200);
+          pushLog("MEANING RESTORED — the fog recoils! It loses its next attack.");
+        } else {
+          pushLog(`Confusion Shield weakens (${newShield} left).`);
+        }
+      }
+
+      // boss exposed at 3-in-a-row
+      if (enemy.isBoss && run >= 3 && !exposed) {
+        setExposed(true);
+        pushLog(`${enemy.name} is EXPOSED! Bonus damage next hit.`);
+      }
+
+      const vocab = q.vocabId ? getVocab(q.vocabId) : undefined;
+      setGlowWord(vocab?.korean ?? q.answer);
+      floatId.current += 1;
+      setFloatDmg({ id: floatId.current, n: dmg, crit });
       setShake((s) => s + 1);
-      setSlashFx((s) => s + 1);
-      setPlayerLunge(true);
-      setTimeout(() => setPlayerLunge(false), 260);
-      addFloat({
-        id: 0,
-        text: `${res.damage}${res.crit ? "!" : ""}`,
-        color: res.affinity === "weak" ? "#ffd76a" : res.crit ? "#ff8a5a" : "#ffffff",
-        side: "enemy",
-        big: res.crit || res.affinity === "weak",
-      } as FloatNum);
+      const nextHp = Math.max(0, enemyHp - dmg);
+      setEnemyHp(nextHp);
+      pushLog(`Correct! ${vocab?.korean ?? q.answer} strikes for ${dmg}${crit ? " (combo!)" : ""}.`);
 
-      let msg = `Kael's ${label} hits ${enemy.def.name} for ${res.damage}.`;
-      if (res.affinity === "weak") msg += " Weakness struck!";
-      if (res.affinity === "resist") msg += " It resisted.";
-      if (res.crit) msg += " Critical!";
-      pushLog(msg);
-
-      if (res.shatteredNow) {
-        sfx("shatter");
-        setShatterFx((s) => s + 1);
-        setShake((s) => s + 3);
-        pushLog(`GUARD SHATTERED! ${enemy.def.name} is staggered — it will take +50% damage and lose its next turn!`);
-      } else if (res.affinity === "weak" && enemy.maxGuardPoints > 0 && !enemy.shattered) {
-        pushLog(`Guard Point removed (${enemy.guardPoints} remaining).`);
-      }
-      force();
-      return res;
-    },
-    [eff.atk, eff.crit, enemy, spendLevel, addFloat, pushLog],
-  );
-
-  const endPlayerTurn = useCallback(() => {
-    setSpendLevel(0);
-    setPendingAction(null);
-    setTab("root");
-    if (enemy.hp <= 0) {
-      finishVictory();
-      return;
-    }
-    // gain momentum next turn happens at player's next turn start
-    setTimeout(() => setTurn("enemy"), 450);
-  }, [enemy]);
-
-  const performAttack = useCallback(() => {
-    setBusy(true);
-    doDamage("sword", 1, "strike");
-    setMomentum((m) => Math.max(0, m - spendLevel));
-    setTimeout(() => {
-      setBusy(false);
-      endPlayerTurn();
-    }, 350);
-  }, [doDamage, spendLevel, endPlayerTurn]);
-
-  const performSkill = useCallback(
-    (skillId: string) => {
-      const skill = getSkill(skillId);
-      if (spRef.current < skill.spCost) {
-        sfx("error");
-        pushLog("Not enough SP.");
-        return;
-      }
-      setBusy(true);
-      spRef.current -= skill.spCost;
-      if (skill.effect === "defUp") {
-        setDefUpTurns(2);
-        pushLog("Kael raises a Defiant Guard. DEF surges for 2 turns.");
-        sfx("item");
-        setMomentum((m) => Math.max(0, m - spendLevel));
-        setTimeout(() => {
-          setBusy(false);
-          endPlayerTurn();
-        }, 350);
-        return;
-      }
-      const res = doDamage(skill.element, skill.power, skill.name);
-      if (skill.effect === "stun" && Math.random() < 0.4 && !enemy.shattered) {
-        enemy.shatterTurns = 1;
-        enemy.shattered = true;
-        pushLog(`${enemy.def.name} is staggered by the bash!`);
-        setShatterFx((s) => s + 1);
-      }
-      void res;
-      setMomentum((m) => Math.max(0, m - spendLevel));
-      setTimeout(() => {
-        setBusy(false);
-        endPlayerTurn();
-      }, 350);
-    },
-    [doDamage, spendLevel, endPlayerTurn, enemy, pushLog],
-  );
-
-  const performItem = useCallback(
-    (itemId: string) => {
-      const item = getItem(itemId);
-      const res = game.useConsumable(itemId);
-      if (!res) {
-        sfx("error");
-        return;
-      }
-      sfx("item");
-      if (res.healedHp) {
-        hpRef.current = Math.min(player.maxHp, hpRef.current + res.healedHp);
-        addFloat({ id: 0, text: `+${res.healedHp}`, color: "#7ee08a", side: "player" } as FloatNum);
-      }
-      if (res.healedSp) {
-        spRef.current = Math.min(player.maxSp, spRef.current + res.healedSp);
-        addFloat({ id: 0, text: `+${res.healedSp} SP`, color: "#7fb4d6", side: "player" } as FloatNum);
-      }
-      pushLog(`Kael uses ${item.name}.`);
-      setBusy(true);
-      setTimeout(() => {
-        setBusy(false);
-        endPlayerTurn();
-      }, 350);
-    },
-    [game, player.maxHp, player.maxSp, addFloat, pushLog, endPlayerTurn],
-  );
-
-  const performGuard = useCallback(() => {
-    setDefUpTurns(1);
-    pushLog("Kael guards, bracing against the next blow.");
-    setMomentum((m) => Math.min(MAX_MOMENTUM, m + 1));
-    sfx("select");
-    setBusy(true);
-    setTimeout(() => {
-      setBusy(false);
-      endPlayerTurn();
-    }, 300);
-  }, [pushLog, endPlayerTurn]);
-
-  const performAnalyze = useCallback(() => {
-    const weak = enemy.def.weaknesses.map((w) => ELEMENT_META[w].name).join(", ");
-    const resist = enemy.def.resists.map((w) => ELEMENT_META[w].name).join(", ") || "none";
-    pushLog(`Analyze — ${enemy.def.name}: HP ${enemy.hp}/${enemy.maxHp}. Weak to ${weak}. Resists ${resist}.`);
-    sfx("select");
-    setTab("root");
-  }, [enemy, pushLog]);
-
-  const performFlee = useCallback(() => {
-    if (isBoss) {
-      sfx("error");
-      pushLog("There is no fleeing the Hollow Guard.");
-      return;
-    }
-    const chance = fleeChance(eff.spd, enemy.def.stats.spd);
-    if (Math.random() < chance) {
-      pushLog("Kael breaks away into the snow.");
-      sfx("advance");
-      setEnded("flee");
-      setTimeout(() => onEnd("flee", hpRef.current, spRef.current), 700);
+      window.setTimeout(() => {
+        setGlowWord(null);
+        if (nextHp <= 0) {
+          victory();
+        } else {
+          setPhase("command");
+        }
+      }, 900);
     } else {
-      pushLog("Couldn't escape!");
       sfx("error");
-      setBusy(true);
-      setTimeout(() => {
-        setBusy(false);
-        endPlayerTurn();
-      }, 300);
+      setCombo(0);
+      setCorrectRun(0);
+      // boss restores a little shield on wrong
+      if (enemy.isBoss && shield < enemy.confusionShield) {
+        setShield((s) => Math.min(enemy.confusionShield, s + 1));
+        pushLog("Wrong — the fog thickens, restoring some shield.");
+      }
+      const vocab = q.vocabId ? getVocab(q.vocabId) : undefined;
+      pushLog(
+        `Not quite. ${q.answer}${vocab ? ` = ${vocab.english}` : ""}. Bori: "It's okay — you'll get it!"`,
+      );
+      enemyTurn(true);
     }
-  }, [isBoss, eff.spd, enemy, pushLog, onEnd, endPlayerTurn]);
+  }
 
-  // ── Victory ──────────────────────────────────────────────────────────────
-  const finishVictory = useCallback(() => {
-    setEnded("victory");
-    sfx("victory");
-  }, []);
-
-  // ── Enemy turn ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (turn !== "enemy" || ended) return;
-    let cancelled = false;
-    const run = async () => {
-      await wait(550);
-      if (cancelled) return;
-      // tick defUp
-      setDefUpTurns((d) => Math.max(0, d - 1));
-      if (enemy.shattered) {
-        pushLog(`${enemy.def.name} is Shattered and loses its turn.`);
-        enemy.shatterTurns -= 1;
-        if (enemy.shatterTurns <= 0) enemy.shattered = false;
-        force();
-        await wait(600);
-        if (cancelled) return;
-        startPlayerTurn();
+  function enemyTurn(playerWrong: boolean) {
+    setPhase("result");
+    window.setTimeout(() => {
+      if (meaningBreak) {
+        pushLog(`${enemy.name} is dazed and cannot attack.`);
+        setMeaningBreak(false);
+        setPhase("command");
         return;
       }
-      const skill = pickEnemySkill(enemy);
-      const dmg = computeDamageToPlayer({
-        enemy,
-        skill,
-        playerDef: eff.def,
-        playerDefUp: defUpTurns > 0,
-      }).damage;
-      hpRef.current = Math.max(0, hpRef.current - dmg);
+      // enemy attack costs HP (and a heart only if player answered wrong)
+      const dmg = enemy.isBoss ? 16 : 12;
+      const charm = progress.inventory.memoryCharm ?? 0;
+      if (playerWrong && charm > 0) {
+        progress.inventory.memoryCharm -= 1;
+        pushLog("Memory Charm absorbs the hit! No heart lost.");
+        game.forceUpdate();
+      } else if (playerWrong) {
+        const h = game.loseHeart();
+        pushLog(`${enemy.name} lashes out — you lose a heart (${h} left).`);
+      }
       sfx("hit");
-      setPlayerHurt(true);
       setShake((s) => s + 1);
-      setTimeout(() => setPlayerHurt(false), 220);
-      addFloat({ id: 0, text: `${dmg}`, color: "#ff6a6a", side: "player" } as FloatNum);
-      pushLog(`${enemy.def.name}${skill ? ` uses ${skill.name} and` : ""} hits Kael for ${dmg}.`);
-      force();
-      await wait(500);
-      if (cancelled) return;
-      if (hpRef.current <= 0) {
-        pushLog("Kael falls to one knee... darkness takes him.");
-        setEnded("defeat");
-        sfx("error");
-        return;
+      const nextHp = Math.max(0, playerHp - dmg);
+      setPlayerHp(nextHp);
+      if (nextHp <= 0 || progress.hearts <= 0) {
+        defeat();
+      } else {
+        setPhase("command");
       }
-      startPlayerTurn();
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [turn, ended]);
+    }, 700);
+  }
 
-  const startPlayerTurn = useCallback(() => {
-    setMomentum((m) => Math.min(MAX_MOMENTUM, m + 1));
-    setTab("root");
-    setSpendLevel(0);
-    setTurn("player");
-  }, []);
+  function victory() {
+    setPhase("over");
+    game.addXp(XP.battleVictory);
+    game.addCoins(20);
+    game.bumpDaily("dq4");
+    game.refillHearts();
+    game.saveNow();
+    sfx("victory");
+    window.setTimeout(() => onEnd(true, { correct: correctTotal, xp: xpTotal + XP.battleVictory }), 600);
+  }
 
-  // turn order display
-  const order = useMemo(() => {
-    const list = [
-      { name: "Kael", spd: eff.spd, you: true },
-      { name: enemy.def.name, spd: enemy.def.stats.spd, you: false },
-    ].sort((a, b) => b.spd - a.spd);
-    return list;
-  }, []);
+  function defeat() {
+    setPhase("over");
+    game.refillHearts();
+    game.saveNow();
+    window.setTimeout(() => onEnd(false, { correct: correctTotal, xp: xpTotal }), 600);
+  }
 
-  const skillList = player.unlockedSkills.map((id) => getSkill(id));
-  const consumables = Object.entries(player.inventory).filter(
-    ([id]) => getItem(id)?.category === "consumable",
-  );
+  const worldWidth = Math.max(viewportW * 1.2, 1100);
+  const vocabHint = currentQ.vocabId ? getVocab(currentQ.vocabId) : undefined;
+
+  const commands: { id: Command; label: string; desc: string }[] = [
+    { id: "word", label: "Word Strike", desc: "Answer a vocab question" },
+    { id: "sound", label: "Sound Guard", desc: "Hangul sound question" },
+    { id: "grammar", label: "Grammar Spell", desc: "Meaning question, big dmg" },
+    { id: "hint", label: "Hint", desc: "Bori helps (less XP)" },
+    { id: "review", label: "Review", desc: "Recall words (uses turn)" },
+    { id: "item", label: "Item", desc: "Use a charm" },
+  ];
 
   return (
-    <div
-      style={{ position: "absolute", inset: 0, zIndex: 70, overflow: "hidden" }}
-      className={shake ? "coer-shake" : undefined}
-      key={`battle-shake-${shake}`}
-    >
-      {/* cinematic side-view battle backdrop (area-derived) */}
-      <div style={{ position: "absolute", inset: 0, ...battleStageStyle(battleTheme, isBoss) }} />
-      {/* atmospheric depth: far silhouettes */}
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: "30%",
-          height: "26%",
-          background:
-            "radial-gradient(ellipse 20% 100% at 20% 100%,rgba(0,0,0,0.4) 0,transparent 70%),radial-gradient(ellipse 24% 100% at 60% 100%,rgba(0,0,0,0.35) 0,transparent 72%),radial-gradient(ellipse 18% 100% at 85% 100%,rgba(0,0,0,0.4) 0,transparent 70%)",
-          opacity: 0.6,
-        }}
-      />
-      {/* battle ground platform (side-view stage) */}
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: "32%",
-          background:
-            "linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.75))",
-          boxShadow: "inset 0 30px 60px rgba(0,0,0,0.5)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: "32%",
-          height: 2,
-          background: "rgba(216,178,90,0.12)",
-        }}
-      />
-      {/* entry flash */}
-      <div
-        className="coer-battle-flash"
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: isBoss
-            ? "radial-gradient(circle,rgba(170,110,230,0.6),transparent 60%)"
-            : "radial-gradient(circle,rgba(220,235,255,0.7),transparent 60%)",
-          pointerEvents: "none",
-          zIndex: 80,
-        }}
-      />
-      {/* particle ambience reused from explore */}
-      <BattleParticles theme={battleTheme} />
-      {/* vignette */}
-      <div className="coer-vignette" style={{ position: "absolute", inset: 0 }} />
+    <div className="absolute inset-0 overflow-hidden">
+      <div className={shake ? "coer-shake absolute inset-0" : "absolute inset-0"} key={`shk-${shake}`}>
+        <Diorama theme={theme} camX={0} worldWidth={worldWidth} viewportW={viewportW} viewportH={viewportH} laneBottomFrac={0.62} />
+        <Atmosphere theme={theme} />
 
-      {/* turn order bar */}
-      <div
-        style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", zIndex: 75 }}
-        className="flex items-center gap-2"
-      >
-        <span className="text-[10px] uppercase tracking-widest text-[#bfb59c] mr-1">Order</span>
-        {order.map((o, i) => (
-          <div
-            key={o.name + i}
-            className="px-2.5 py-1 rounded-full border text-[11px]"
-            style={{
-              borderColor:
-                (turn === "player") === o.you ? "#e9cf86" : "rgba(216,178,90,0.3)",
-              color: (turn === "player") === o.you ? "#e9cf86" : "#9a917c",
-              background: (turn === "player") === o.you ? "rgba(216,178,90,0.12)" : "transparent",
-            }}
-          >
-            {o.name}
-          </div>
-        ))}
-      </div>
+        {/* battle entry flash */}
+        <div className="coer-battle-flash absolute inset-0 bg-violet-300/30 pointer-events-none" style={{ zIndex: 25 }} />
 
-      {/* Enemy (right side of the stage, upright) */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: "30%",
-          right: isBoss ? "16%" : "20%",
-          textAlign: "center",
-          zIndex: 72,
-        }}
-      >
-        {/* ground shadow */}
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            bottom: -6,
-            transform: "translateX(-50%)",
-            width: isBoss ? 130 : 92,
-            height: 18,
-            borderRadius: "50%",
-            background: "radial-gradient(ellipse,rgba(0,0,0,0.55),transparent 70%)",
-            filter: "blur(2px)",
-          }}
-        />
-        <div className="relative">
-          <div className={`${enemyHurt ? "opacity-60" : ""} ${enemy.shattered ? "coer-shake" : "coer-bob"}`}>
-            <Sprite kind={enemy.def.spriteKind} size={isBoss ? 168 : 120} />
-          </div>
-          {/* slash arc on hit */}
-          {slashFx > 0 && (
+        {/* party: Arin + Bori bottom-left */}
+        <div style={{ position: "absolute", left: "20%", top: "60%", zIndex: 22 }}>
+          <PixelCharacter kind="arin" baseSize={140} worldX={0} screenYFrac={1} viewportH={140} scale={1} facing="right" z={2} />
+          {glowWord && (
             <div
-              key={`slash-${slashFx}`}
-              className="coer-slash"
-              style={{
-                position: "absolute",
-                left: "10%",
-                top: "20%",
-                width: "80%",
-                height: "60%",
-                background:
-                  "linear-gradient(120deg,transparent 40%,rgba(255,250,230,0.95) 50%,transparent 60%)",
-                filter: "drop-shadow(0 0 8px rgba(255,235,180,0.9))",
-                pointerEvents: "none",
-              }}
-            />
+              className="coer-dmg absolute"
+              style={{ left: "50%", top: -70, transform: "translateX(-50%)", color: "#ffe9a8", fontSize: 26, textShadow: "0 0 16px rgba(255,220,140,0.9)", whiteSpace: "nowrap" }}
+            >
+              {glowWord}
+            </div>
           )}
-          {shatterFx > 0 && (
-            <div
-              key={`sf-${shatterFx}`}
-              className="coer-shatter-flash"
-              style={{
-                position: "absolute",
-                inset: -20,
-                background: "radial-gradient(circle, rgba(199,91,255,0.7), transparent 65%)",
-                pointerEvents: "none",
-              }}
-            />
-          )}
-          {/* enemy floats */}
-          {floats
-            .filter((f) => f.side === "enemy")
-            .map((f) => (
-              <span
-                key={f.id}
-                className="coer-dmg"
-                style={{
-                  position: "absolute",
-                  left: "50%",
-                  top: 10,
-                  transform: "translateX(-50%)",
-                  color: f.color,
-                  fontWeight: 800,
-                  fontSize: f.big ? 32 : 22,
-                  textShadow: "0 2px 6px rgba(0,0,0,0.8)",
-                  fontFamily: "'Cinzel', serif",
-                }}
-              >
-                {f.text}
-              </span>
-            ))}
+        </div>
+        <div style={{ position: "absolute", left: "9%", top: "66%", zIndex: 21 }}>
+          <PixelCharacter kind="bori" baseSize={84} worldX={0} screenYFrac={1} viewportH={84} scale={1} facing="right" glow bob z={1} />
         </div>
 
-        {/* enemy nameplate */}
-        <div className="mt-2 mx-auto" style={{ width: isBoss ? 280 : 220 }}>
-          <Panel className="px-3 py-2">
-            <div className="flex items-center justify-between mb-1">
-              <span className="coer-heading text-xs">{enemy.def.name}</span>
-              {enemy.shattered && (
-                <span className="text-[10px] font-bold text-[#c75bff] coer-blink">SHATTERED</span>
-              )}
+        {/* enemy right */}
+        <div style={{ position: "absolute", right: "16%", top: "56%", zIndex: 22 }}>
+          <div className={meaningBreak ? "opacity-60" : ""}>
+            <Sprite kind="wisp" size={150} facing="left" />
+          </div>
+          {floatDmg && (
+            <div
+              key={floatDmg.id}
+              className="coer-dmg absolute"
+              style={{ left: "50%", top: -40, transform: "translateX(-50%)", color: floatDmg.crit ? "#ffd86a" : "#ff8a8a", fontSize: floatDmg.crit ? 34 : 26, fontWeight: 700, textShadow: "0 0 12px rgba(0,0,0,0.7)" }}
+            >
+              {floatDmg.n}
             </div>
-            <StatBar value={enemy.hp} max={enemy.maxHp} color="hp" compact />
-            <div className="flex items-center justify-between mt-1.5">
-              {/* guard pips */}
-              {enemy.maxGuardPoints > 0 && (
-                <div className="flex items-center gap-1">
-                  <span className="text-[9px] text-[#bfb59c] uppercase">Guard</span>
-                  {Array.from({ length: enemy.maxGuardPoints }).map((_, i) => (
-                    <span
-                      key={i}
-                      style={{
-                        width: 9,
-                        height: 9,
-                        borderRadius: "50%",
-                        background: i < enemy.guardPoints ? "#e9cf86" : "transparent",
-                        border: "1px solid rgba(216,178,90,0.6)",
-                        boxShadow: i < enemy.guardPoints ? "0 0 6px #e9cf86" : "none",
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-              {/* weakness icons */}
-              <div className="flex items-center gap-1 ml-auto">
-                {enemy.def.weaknesses.map((w) => (
-                  <span
-                    key={w}
-                    title={`Weak: ${ELEMENT_META[w].name}`}
-                    style={{ fontSize: 12 }}
+          )}
+        </div>
+
+        {showBreak && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 26 }}>
+            <div className="coer-shatter-flash coer-heading text-4xl" style={{ color: "#c89aff", textShadow: "0 0 30px rgba(200,154,255,0.9)" }}>
+              MEANING RESTORED
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* enemy HP + shield bar (top) */}
+      <div className="absolute top-3 right-3 z-30 w-[260px]">
+        <div className="coer-panel p-2">
+          <div className="flex justify-between text-xs text-[#e9cf86] mb-1">
+            <span>{enemy.name}{enemy.isBoss ? " (Boss)" : ""}</span>
+            <span>{enemyHp}/{enemy.hp}</span>
+          </div>
+          <div className="h-2.5 rounded-full bg-black/50 overflow-hidden border border-black/60">
+            <div className="h-full" style={{ width: `${(enemyHp / enemy.hp) * 100}%`, background: "linear-gradient(90deg,#7a3aa0,#b06ad6)", transition: "width 0.4s" }} />
+          </div>
+          <div className="mt-1.5 flex items-center gap-1 text-[11px] text-[#bfb59c]">
+            <span>Confusion Shield:</span>
+            {Array.from({ length: enemy.confusionShield }).map((_, i) => (
+              <span key={i} className={i < shield ? "text-violet-300" : "text-[#3a3340]"}>◆</span>
+            ))}
+            {meaningBreak && <span className="text-amber-300 ml-1">BROKEN</span>}
+            {exposed && <span className="text-rose-300 ml-1">EXPOSED</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* combo indicator */}
+      {combo >= 2 && (
+        <div className="absolute top-3 left-3 z-30 coer-panel px-3 py-1.5">
+          <span className="coer-heading text-sm">Fluency Combo x{combo}</span>
+          <span className="text-[11px] text-[#bfb59c] ml-2">+{Math.round((comboMult(combo) - 1) * 100)}% dmg</span>
+        </div>
+      )}
+
+      {/* bottom command / question panel */}
+      <div className="absolute inset-x-0 bottom-0 z-30 p-3">
+        <div className="coer-panel coer-panel-frame mx-auto max-w-[720px] p-3">
+          {/* player hearts/hp */}
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex gap-0.5">
+              {Array.from({ length: progress.maxHearts }).map((_, i) => (
+                <span key={i} className={i < progress.hearts ? "text-rose-400" : "text-[#3a3340]"}>♥</span>
+              ))}
+            </div>
+            <div className="flex-1">
+              <StatBar value={playerHp} max={maxPlayerHp} color="hp" compact />
+            </div>
+          </div>
+
+          {/* log */}
+          <div className="h-[52px] overflow-hidden text-[12px] text-[#cfc6ad] leading-tight mb-2 bg-black/25 rounded p-1.5 border border-[rgba(216,178,90,0.15)]">
+            {log.slice(-3).map((l, i) => (
+              <div key={i}>{l}</div>
+            ))}
+          </div>
+
+          {phase === "command" || phase === "result" || phase === "over" ? (
+            <div className="grid grid-cols-3 gap-2">
+              {commands.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={phase !== "command"}
+                  onClick={() => pickCommand(c.id)}
+                  title={c.desc}
+                  className="rounded border border-[rgba(216,178,90,0.5)] px-2 py-2 text-[13px] text-[#ece6d6] bg-gradient-to-b from-[rgba(25,32,58,0.9)] to-[rgba(10,15,30,0.95)] hover:border-[#e9cf86] hover:text-[#e9cf86] disabled:opacity-40 transition-all"
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <div className="text-center mb-2">
+                {currentQ.subPrompt && (
+                  <div className="text-3xl text-[#ffe9a8] mb-0.5" style={{ textShadow: "0 0 16px rgba(255,220,140,0.6)" }}>
+                    {currentQ.subPrompt}
+                  </div>
+                )}
+                <div className="text-sm text-[#ece6d6]">{currentQ.prompt}</div>
+                {showHint && (
+                  <div className="text-xs text-[#ffd98a] mt-1">
+                    🦊 {vocabHint ? `${vocabHint.korean} = ${vocabHint.english}` : `Answer: ${currentQ.answer}`}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {currentQ.options.map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    onClick={() => answer(o)}
+                    className="rounded border border-[rgba(216,178,90,0.5)] px-3 py-2 text-sm text-[#ece6d6] bg-gradient-to-b from-[rgba(25,32,58,0.9)] to-[rgba(10,15,30,0.95)] hover:border-[#e9cf86] hover:text-[#e9cf86] transition-all"
                   >
-                    {ELEMENT_META[w].icon}
-                  </span>
+                    {o}
+                  </button>
                 ))}
               </div>
             </div>
-          </Panel>
+          )}
         </div>
       </div>
-
-      {/* Player sprite (left side of the stage, upright, faces enemy) */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: "30%",
-          left: "18%",
-          zIndex: 71,
-          transform: playerLunge ? "translateX(40px)" : "translateX(0)",
-          transition: "transform 0.13s ease-out",
-        }}
-      >
-        {/* ground shadow */}
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            bottom: -6,
-            transform: "translateX(-50%)",
-            width: 80,
-            height: 16,
-            borderRadius: "50%",
-            background: "radial-gradient(ellipse,rgba(0,0,0,0.55),transparent 70%)",
-            filter: "blur(2px)",
-          }}
-        />
-        <div className={`relative ${playerHurt ? "opacity-60" : "coer-breathe"}`}>
-          <Sprite kind="kael" size={132} facing="right" />
-          {floats
-            .filter((f) => f.side === "player")
-            .map((f) => (
-              <span
-                key={f.id}
-                className="coer-dmg"
-                style={{
-                  position: "absolute",
-                  left: "50%",
-                  top: -4,
-                  transform: "translateX(-50%)",
-                  color: f.color,
-                  fontWeight: 800,
-                  fontSize: 22,
-                  textShadow: "0 2px 6px rgba(0,0,0,0.8)",
-                  fontFamily: "'Cinzel', serif",
-                }}
-              >
-                {f.text}
-              </span>
-            ))}
-        </div>
-      </div>
-
-      {/* Combat log */}
-      <div
-        ref={logRef}
-        className="coer-scroll"
-        style={{
-          position: "absolute",
-          right: 14,
-          top: 70,
-          width: 220,
-          maxHeight: 150,
-          overflowY: "auto",
-          zIndex: 73,
-        }}
-      >
-        <Panel className="px-3 py-2">
-          {log.map((l, i) => (
-            <p key={i} className="text-[11px] leading-snug text-[#cdbf9a] mb-1 last:mb-0">
-              {l}
-            </p>
-          ))}
-        </Panel>
-      </div>
-
-      {/* Player HUD + commands */}
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 76 }}>
-        <Panel frame={false} className="m-2 px-4 py-3">
-          <div className="flex items-end gap-4">
-            {/* stats */}
-            <div style={{ width: 200 }}>
-              <div className="coer-heading text-sm mb-1">Kael · Lv {player.level}</div>
-              <StatBar value={hpRef.current} max={player.maxHp} color="hp" label="HP" />
-              <div className="h-1.5" />
-              <StatBar value={spRef.current} max={player.maxSp} color="sp" label="SP" />
-              {/* Momentum meter */}
-              <div className="mt-2">
-                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-[#bfb59c] mb-0.5">
-                  <span>Momentum</span>
-                  <span>{momentum}/{MAX_MOMENTUM}</span>
-                </div>
-                <div className="flex gap-1">
-                  {Array.from({ length: MAX_MOMENTUM }).map((_, i) => (
-                    <span
-                      key={i}
-                      style={{
-                        flex: 1,
-                        height: 7,
-                        borderRadius: 3,
-                        background: i < momentum
-                          ? "linear-gradient(90deg,#e07a3c,#e9cf86)"
-                          : "rgba(255,255,255,0.08)",
-                        boxShadow: i < momentum ? "0 0 6px rgba(224,122,60,0.6)" : "none",
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* command area */}
-            <div className="flex-1 min-h-[96px]">
-              {turn === "player" && !busy && !ended ? (
-                <CommandPanel
-                  tab={tab}
-                  setTab={setTab}
-                  skills={skillList}
-                  consumables={consumables}
-                  momentum={momentum}
-                  spendLevel={spendLevel}
-                  setSpendLevel={setSpendLevel}
-                  pendingAction={pendingAction}
-                  setPendingAction={setPendingAction}
-                  onAttack={performAttack}
-                  onSkill={performSkill}
-                  onItem={performItem}
-                  onGuard={performGuard}
-                  onAnalyze={performAnalyze}
-                  onFlee={performFlee}
-                  isBoss={isBoss}
-                  playerSp={spRef.current}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-[#9a917c] text-sm italic">
-                  {ended ? "" : turn === "enemy" ? "The enemy moves..." : "..."}
-                </div>
-              )}
-            </div>
-          </div>
-        </Panel>
-      </div>
-
-      {/* Victory / Defeat overlays */}
-      {ended === "victory" && (
-        <VictoryOverlay
-          enemyId={enemyId}
-          isBoss={isBoss}
-          onContinue={() => onEnd("victory", hpRef.current, spRef.current)}
-        />
-      )}
-      {ended === "defeat" && (
-        <DefeatOverlay onChoice={() => onEnd("defeat", 0, spRef.current)} />
-      )}
     </div>
   );
 }
-
-// ── Command panel ────────────────────────────────────────────────────────────
-function CommandPanel(props: {
-  tab: CommandTab;
-  setTab: (t: CommandTab) => void;
-  skills: ReturnType<typeof getSkill>[];
-  consumables: [string, number][];
-  momentum: number;
-  spendLevel: number;
-  setSpendLevel: (n: number) => void;
-  pendingAction: { kind: "attack" } | { kind: "skill"; id: string } | null;
-  setPendingAction: (a: { kind: "attack" } | { kind: "skill"; id: string } | null) => void;
-  onAttack: () => void;
-  onSkill: (id: string) => void;
-  onItem: (id: string) => void;
-  onGuard: () => void;
-  onAnalyze: () => void;
-  onFlee: () => void;
-  isBoss: boolean;
-  playerSp: number;
-}) {
-  const {
-    tab,
-    setTab,
-    skills,
-    consumables,
-    momentum,
-    spendLevel,
-    setSpendLevel,
-    pendingAction,
-    setPendingAction,
-    onAttack,
-    onSkill,
-    onItem,
-    onGuard,
-    onAnalyze,
-    onFlee,
-    isBoss,
-    playerSp,
-  } = props;
-
-  // momentum chooser before committing an attack/skill
-  if (tab === "momentum" && pendingAction) {
-    return (
-      <div>
-        <div className="text-xs text-[#bfb59c] mb-2">
-          Spend Momentum for a damage bonus, then strike:
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {Array.from({ length: momentum + 1 }).map((_, lvl) => (
-            <GoldButton
-              key={lvl}
-              active={spendLevel === lvl}
-              onClick={() => setSpendLevel(lvl)}
-              className="px-3 py-1.5"
-            >
-              {lvl === 0 ? "None" : `${lvl} ▸ +${Math.round(MOMENTUM_BONUS[lvl] * 100)}%`}
-            </GoldButton>
-          ))}
-        </div>
-        <div className="flex gap-2 mt-3">
-          <GoldButton
-            onClick={() => {
-              if (pendingAction.kind === "attack") onAttack();
-              else onSkill(pendingAction.id);
-            }}
-            active
-          >
-            Strike{spendLevel === MAX_MOMENTUM ? " ✦" : ""}
-          </GoldButton>
-          <GoldButton
-            onClick={() => {
-              setSpendLevel(0);
-              setPendingAction(null);
-              setTab("root");
-            }}
-          >
-            Back
-          </GoldButton>
-        </div>
-      </div>
-    );
-  }
-
-  if (tab === "skills") {
-    return (
-      <div>
-        <div className="grid grid-cols-2 gap-2">
-          {skills.map((s) => (
-            <GoldButton
-              key={s.id}
-              disabled={playerSp < s.spCost}
-              title={s.description}
-              onClick={() => {
-                if (s.effect === "defUp") {
-                  onSkill(s.id);
-                  return;
-                }
-                setPendingAction({ kind: "skill", id: s.id });
-                setTab("momentum");
-              }}
-              className="justify-start text-left"
-            >
-              <span className="flex justify-between w-full">
-                <span>{s.name}</span>
-                <span className="text-[#7fb4d6] text-xs ml-2">{s.spCost} SP</span>
-              </span>
-            </GoldButton>
-          ))}
-        </div>
-        <div className="mt-2">
-          <GoldButton onClick={() => setTab("root")} className="px-3 py-1">
-            Back
-          </GoldButton>
-        </div>
-      </div>
-    );
-  }
-
-  if (tab === "item") {
-    return (
-      <div>
-        {consumables.length === 0 ? (
-          <div className="text-sm text-[#9a917c] italic mb-2">No usable items.</div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {consumables.map(([id, qty]) => (
-              <GoldButton key={id} onClick={() => onItem(id)} className="justify-start text-left">
-                <span className="flex justify-between w-full">
-                  <span>{getItem(id).name}</span>
-                  <span className="text-[#bfb59c] text-xs ml-2">×{qty}</span>
-                </span>
-              </GoldButton>
-            ))}
-          </div>
-        )}
-        <div className="mt-2">
-          <GoldButton onClick={() => setTab("root")} className="px-3 py-1">
-            Back
-          </GoldButton>
-        </div>
-      </div>
-    );
-  }
-
-  // root commands
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      <GoldButton
-        onClick={() => {
-          setPendingAction({ kind: "attack" });
-          setSpendLevel(0);
-          setTab("momentum");
-        }}
-      >
-        Attack
-      </GoldButton>
-      <GoldButton onClick={() => setTab("skills")}>Skills</GoldButton>
-      <GoldButton onClick={onGuard}>Guard</GoldButton>
-      <GoldButton onClick={() => setTab("item")}>Item</GoldButton>
-      <GoldButton onClick={onAnalyze}>Analyze</GoldButton>
-      <GoldButton onClick={onFlee} disabled={isBoss}>
-        Flee
-      </GoldButton>
-    </div>
-  );
-}
-
-// ── Victory overlay (applies exp/coins/level-up) ─────────────────────────────
-function VictoryOverlay({
-  enemyId,
-  isBoss,
-  onContinue,
-}: {
-  enemyId: string;
-  isBoss: boolean;
-  onContinue: () => void;
-}) {
-  const game = useGame();
-  const def = getEnemy(enemyId);
-  const appliedRef = useRef(false);
-  const [levelUp, setLevelUp] = useState<ReturnType<typeof applyExp> | null>(null);
-  const [showLevel, setShowLevel] = useState(false);
-
-  useEffect(() => {
-    if (appliedRef.current) return;
-    appliedRef.current = true;
-    const p = game.state.player;
-    p.coins += def.coinReward;
-    const lu = applyExp(p, def.expReward);
-    // Unlock Ashen Strike after the boss.
-    if (isBoss) game.unlockSkill("ashenStrike");
-    setLevelUp(lu);
-    if (lu.leveled) {
-      sfx("levelup");
-      setTimeout(() => setShowLevel(true), 900);
-    }
-    game.forceUpdate();
-  }, []);
-
-  return (
-    <div
-      style={{ position: "absolute", inset: 0, zIndex: 90, background: "rgba(0,0,0,0.6)" }}
-      className="flex items-center justify-center coer-fade-in"
-    >
-      <Panel className="px-8 py-6 text-center" >
-        <Heading className="text-2xl mb-3">Victory</Heading>
-        <p className="text-sm text-[#cdbf9a] mb-1">{def.name} defeated.</p>
-        <div className="flex justify-center gap-6 my-4 text-sm">
-          <div>
-            <div className="text-[#e9cf86] text-xl coer-heading">+{def.expReward}</div>
-            <div className="text-[10px] uppercase tracking-wider text-[#bfb59c]">EXP</div>
-          </div>
-          <div>
-            <div className="text-[#e9cf86] text-xl coer-heading">+{def.coinReward}</div>
-            <div className="text-[10px] uppercase tracking-wider text-[#bfb59c]">Coins</div>
-          </div>
-        </div>
-
-        {isBoss && (
-          <p className="text-xs text-[#c75bff] mb-3 coer-flicker">
-            New skill learned: Ashen Strike.
-          </p>
-        )}
-
-        {showLevel && levelUp?.leveled && (
-          <div className="coer-fade-in mb-3 p-3 rounded border border-[rgba(216,178,90,0.4)] bg-[rgba(216,178,90,0.06)]">
-            <div className="coer-heading text-lg mb-1">Level Up! → Lv {levelUp.newLevel}</div>
-            <div className="text-xs text-[#cdbf9a] flex justify-center gap-3 flex-wrap">
-              <span>+{levelUp.gains.hp} HP</span>
-              <span>+{levelUp.gains.sp} SP</span>
-              <span>+{levelUp.gains.atk} ATK</span>
-              <span>+{levelUp.gains.def} DEF</span>
-            </div>
-          </div>
-        )}
-
-        <GoldButton onClick={onContinue} active className="mt-1 px-6">
-          Continue
-        </GoldButton>
-      </Panel>
-    </div>
-  );
-}
-
-function DefeatOverlay({ onChoice }: { onChoice: () => void }) {
-  return (
-    <div
-      style={{ position: "absolute", inset: 0, zIndex: 90, background: "rgba(0,0,0,0.85)" }}
-      className="flex items-center justify-center coer-fade-in"
-    >
-      <Panel className="px-8 py-6 text-center">
-        <Heading className="text-2xl mb-2" >Fallen</Heading>
-        <p className="text-sm text-[#9a917c] mb-5 italic">
-          The snow closes over the exile... but his story is not finished.
-        </p>
-        <GoldButton onClick={onChoice} active className="px-6">
-          Return to safety
-        </GoldButton>
-      </Panel>
-    </div>
-  );
-}
-
-function BattleParticles({ theme }: { theme: "chapel" | "snow" | "town" | "shrine" }) {
-  return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 31 }}>
-      <Atmosphere theme={theme} />
-    </div>
-  );
-}
-
-function wait(ms: number) {
-  return new Promise<void>((r) => setTimeout(r, ms));
-}
-
-// re-export to satisfy unused import lint awareness
-void affinityOf;

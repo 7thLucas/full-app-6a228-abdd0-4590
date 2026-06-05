@@ -2,11 +2,11 @@ import type { MetaFunction } from "react-router";
 import { GameRoot } from "~/game/GameRoot";
 
 export const meta: MetaFunction = () => [
-  { title: "Chronicles of the Eight Roads — Chapter 1: The Ashen Oath" },
+  { title: "Hangul Roads — Learn Korean Through Adventure" },
   {
     name: "description",
     content:
-      "A premium, melancholic HD-2D-inspired browser JRPG vertical slice. Lonely, hunted, but destined for something bigger.",
+      "An HD-2D side-view adventure for learning Korean. Walk the Haneul Road, restore the Letters of Light, and master Hangul through battles, quests, and a daily habit loop.",
   },
 ];
 

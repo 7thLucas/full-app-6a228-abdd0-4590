@@ -7,80 +7,86 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AreaId } from "../data/types";
 import {
-  type GameState,
-  createNewGame,
-  loadGame,
-  saveGame,
-  applyExp,
-  type LevelUpResult,
-} from "./state";
-import { MAIN_QUEST } from "../data/quests";
-import { getItem } from "../data/items";
+  type PlayerProgress,
+  createNewProgress,
+  loadProgress,
+  saveProgress,
+  hasSave,
+  addXp as addXpFn,
+  addCoins as addCoinsFn,
+  loseHeart as loseHeartFn,
+  refillHearts as refillHeartsFn,
+  recordAnswer as recordAnswerFn,
+  learnWord as learnWordFn,
+  completeLesson as completeLessonFn,
+  touchStreak as touchStreakFn,
+  bumpDaily as bumpDailyFn,
+} from "../data/playerProgress";
+import type { AreaId } from "../data/gameData";
 
 export type Screen =
-  | "title"
-  | "select"
-  | "credits"
-  | "settings"
-  | "cutscene-open"
+  | "menu"
+  | "onboarding"
+  | "map"
   | "explore"
+  | "battle"
+  | "lessonComplete"
+  | "streak"
+  | "review"
+  | "wordbook"
+  | "quests"
+  | "character"
+  | "shop"
+  | "settings"
+  | "dailyQuest"
   | "ending";
 
 export interface Settings {
-  master: number;
-  music: number;
-  sfx: number;
+  showRomanization: boolean;
+  showEnglishHint: boolean;
+  slowMode: boolean;
+  largerText: boolean;
   textSpeed: "slow" | "normal" | "fast";
+  sound: boolean;
 }
 
-interface PendingBattle {
-  enemyId: string;
-  interactableId: string;
-  isBoss: boolean;
-  afterFlag?: string;
-}
-
-export interface BattleOutcome {
-  result: "victory" | "defeat" | "flee";
-  exp?: number;
-  coins?: number;
-  levelUp?: LevelUpResult;
-}
+const DEFAULT_SETTINGS: Settings = {
+  showRomanization: true,
+  showEnglishHint: true,
+  slowMode: false,
+  largerText: false,
+  textSpeed: "normal",
+  sound: true,
+};
 
 interface GameStore {
-  state: GameState;
+  progress: PlayerProgress;
   screen: Screen;
   settings: Settings;
-  pendingBattle: PendingBattle | null;
-  battleOutcome: BattleOutcome | null;
+  hasSaveFile: boolean;
 
   setScreen: (s: Screen) => void;
   setSettings: (s: Partial<Settings>) => void;
 
-  newGame: (startingCoins: number) => void;
+  newGame: (level: string, name?: string) => void;
   continueGame: () => boolean;
 
-  // world mutations
-  moveTo: (area: AreaId, x: number, y: number) => void;
-  setPlayerTile: (x: number, y: number, facing: GameState["world"]["facing"]) => void;
+  // mutations
+  setArea: (a: AreaId) => void;
   setFlag: (flag: string) => void;
-  advanceQuest: (toIndex?: number) => void;
-
-  // inventory / economy
-  addItem: (itemId: string, qty: number) => void;
-  removeItem: (itemId: string, qty: number) => void;
-  buyItem: (itemId: string) => boolean;
-  useConsumable: (itemId: string) => { healedHp: number; healedSp: number } | null;
-  equip: (itemId: string) => void;
-
-  // combat plumbing
-  startBattle: (b: PendingBattle) => void;
-  clearBattle: () => void;
-  resolveBattle: (outcome: BattleOutcome, playerHp: number, playerSp: number) => void;
-  clearOutcome: () => void;
-  unlockSkill: (id: string) => void;
+  advanceQuest: (toIndex: number) => void;
+  addXp: (n: number) => { leveledUp: boolean; newLevel: number };
+  addCoins: (n: number) => void;
+  loseHeart: () => number;
+  refillHearts: () => void;
+  recordAnswer: (vocabId: string | undefined, correct: boolean) => void;
+  learnWord: (vocabId: string) => void;
+  completeLesson: (id: string) => void;
+  touchStreak: () => { advanced: boolean; reset: boolean };
+  bumpDaily: (dqId: string, by?: number) => void;
+  addItem: (id: string, qty?: number) => void;
+  buyShopItem: (id: string, price: number, kind: string) => boolean;
 
   saveNow: () => void;
   forceUpdate: () => void;
@@ -88,29 +94,12 @@ interface GameStore {
 
 const Ctx = createContext<GameStore | null>(null);
 
-const DEFAULT_SETTINGS: Settings = {
-  master: 70,
-  music: 60,
-  sfx: 80,
-  textSpeed: "normal",
-};
-
-export function GameStoreProvider({
-  children,
-  initialTextSpeed = "normal",
-}: {
-  children: ReactNode;
-  initialTextSpeed?: "slow" | "normal" | "fast";
-}) {
-  const stateRef = useRef<GameState>(createNewGame(100));
+export function GameStoreProvider({ children }: { children: ReactNode }) {
+  const progressRef = useRef<PlayerProgress>(createNewProgress("beginner"));
   const [, setTick] = useState(0);
-  const [screen, setScreen] = useState<Screen>("title");
-  const [settings, setSettingsState] = useState<Settings>({
-    ...DEFAULT_SETTINGS,
-    textSpeed: initialTextSpeed,
-  });
-  const [pendingBattle, setPendingBattle] = useState<PendingBattle | null>(null);
-  const [battleOutcome, setBattleOutcome] = useState<BattleOutcome | null>(null);
+  const [screen, setScreen] = useState<Screen>("menu");
+  const [settings, setSettingsState] = useState<Settings>(DEFAULT_SETTINGS);
+  const [hasSaveFile] = useState<boolean>(() => (typeof window !== "undefined" ? hasSave() : false));
 
   const forceUpdate = useCallback(() => setTick((t) => t + 1), []);
 
@@ -118,169 +107,193 @@ export function GameStoreProvider({
     setSettingsState((prev) => ({ ...prev, ...s }));
   }, []);
 
-  const newGame = useCallback((startingCoins: number) => {
-    stateRef.current = createNewGame(startingCoins);
-    forceUpdate();
-  }, [forceUpdate]);
-
-  const continueGame = useCallback(() => {
-    const loaded = loadGame();
-    if (!loaded) return false;
-    stateRef.current = loaded;
-    forceUpdate();
-    return true;
-  }, [forceUpdate]);
-
-  const moveTo = useCallback((area: AreaId, x: number, y: number) => {
-    const s = stateRef.current;
-    s.world.area = area;
-    s.world.x = x;
-    s.world.y = y;
-    if (!s.visitedAreas.includes(area)) s.visitedAreas.push(area);
-    forceUpdate();
-  }, [forceUpdate]);
-
-  const setPlayerTile = useCallback(
-    (x: number, y: number, facing: GameState["world"]["facing"]) => {
-      const s = stateRef.current;
-      s.world.x = x;
-      s.world.y = y;
-      s.world.facing = facing;
-      // no forceUpdate here; the explore loop owns its own render cadence
-    },
-    [],
-  );
-
-  const setFlag = useCallback((flag: string) => {
-    stateRef.current.flags[flag] = true;
-    forceUpdate();
-  }, [forceUpdate]);
-
-  const advanceQuest = useCallback((toIndex?: number) => {
-    const s = stateRef.current;
-    const next = toIndex ?? s.questIndex + 1;
-    s.questIndex = Math.min(next, MAIN_QUEST.objectives.length);
-    forceUpdate();
-  }, [forceUpdate]);
-
-  const addItem = useCallback((itemId: string, qty: number) => {
-    const inv = stateRef.current.player.inventory;
-    inv[itemId] = (inv[itemId] ?? 0) + qty;
-    forceUpdate();
-  }, [forceUpdate]);
-
-  const removeItem = useCallback((itemId: string, qty: number) => {
-    const inv = stateRef.current.player.inventory;
-    inv[itemId] = Math.max(0, (inv[itemId] ?? 0) - qty);
-    if (inv[itemId] === 0) delete inv[itemId];
-    forceUpdate();
-  }, [forceUpdate]);
-
-  const buyItem = useCallback((itemId: string) => {
-    const p = stateRef.current.player;
-    const item = getItem(itemId);
-    if (!item || item.price <= 0 || p.coins < item.price) return false;
-    p.coins -= item.price;
-    p.inventory[itemId] = (p.inventory[itemId] ?? 0) + 1;
-    forceUpdate();
-    return true;
-  }, [forceUpdate]);
-
-  const useConsumable = useCallback((itemId: string) => {
-    const p = stateRef.current.player;
-    const item = getItem(itemId);
-    if (!item || (p.inventory[itemId] ?? 0) <= 0) return null;
-    let healedHp = 0;
-    let healedSp = 0;
-    if (item.healHp) {
-      const before = p.hp;
-      p.hp = Math.min(p.maxHp, p.hp + item.healHp);
-      healedHp = p.hp - before;
-    }
-    if (item.healSp) {
-      const before = p.sp;
-      p.sp = Math.min(p.maxSp, p.sp + item.healSp);
-      healedSp = p.sp - before;
-    }
-    p.inventory[itemId] -= 1;
-    if (p.inventory[itemId] <= 0) delete p.inventory[itemId];
-    forceUpdate();
-    return { healedHp, healedSp };
-  }, [forceUpdate]);
-
-  const equip = useCallback((itemId: string) => {
-    const p = stateRef.current.player;
-    const item = getItem(itemId);
-    if (!item || !item.slot) return;
-    p.equipment[item.slot] = itemId;
-    forceUpdate();
-  }, [forceUpdate]);
-
-  const startBattle = useCallback((b: PendingBattle) => {
-    setPendingBattle(b);
-  }, []);
-
-  const clearBattle = useCallback(() => setPendingBattle(null), []);
-
-  const resolveBattle = useCallback(
-    (outcome: BattleOutcome, playerHp: number, playerSp: number) => {
-      const s = stateRef.current;
-      s.player.hp = Math.max(0, playerHp);
-      s.player.sp = Math.max(0, playerSp);
-      if (outcome.result === "victory") {
-        // exp/coins applied in battle component via applyExp; but ensure coins set
-        // (applyExp mutates player.exp/level there). Coins added here if provided.
-      }
-      setBattleOutcome(outcome);
-      setPendingBattle(null);
+  const newGame = useCallback(
+    (level: string, name = "Arin") => {
+      progressRef.current = createNewProgress(level, name);
+      saveProgress(progressRef.current);
       forceUpdate();
     },
     [forceUpdate],
   );
 
-  const clearOutcome = useCallback(() => setBattleOutcome(null), []);
+  const continueGame = useCallback(() => {
+    const loaded = loadProgress();
+    if (!loaded) return false;
+    progressRef.current = loaded;
+    forceUpdate();
+    return true;
+  }, [forceUpdate]);
 
-  const unlockSkill = useCallback((id: string) => {
-    const p = stateRef.current.player;
-    if (!p.unlockedSkills.includes(id)) p.unlockedSkills.push(id);
+  const setArea = useCallback(
+    (a: AreaId) => {
+      progressRef.current.currentArea = a;
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const setFlag = useCallback(
+    (flag: string) => {
+      progressRef.current.flags[flag] = true;
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const advanceQuest = useCallback(
+    (toIndex: number) => {
+      const p = progressRef.current;
+      if (p.questIndex < toIndex) p.questIndex = toIndex;
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const addXp = useCallback(
+    (n: number) => {
+      const r = addXpFn(progressRef.current, n);
+      forceUpdate();
+      return r;
+    },
+    [forceUpdate],
+  );
+
+  const addCoins = useCallback(
+    (n: number) => {
+      addCoinsFn(progressRef.current, n);
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const loseHeart = useCallback(() => {
+    const h = loseHeartFn(progressRef.current);
+    forceUpdate();
+    return h;
+  }, [forceUpdate]);
+
+  const refillHearts = useCallback(() => {
+    refillHeartsFn(progressRef.current);
     forceUpdate();
   }, [forceUpdate]);
 
+  const recordAnswer = useCallback(
+    (vocabId: string | undefined, correct: boolean) => {
+      recordAnswerFn(progressRef.current, vocabId, correct);
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const learnWord = useCallback(
+    (vocabId: string) => {
+      learnWordFn(progressRef.current, vocabId);
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const completeLesson = useCallback(
+    (id: string) => {
+      completeLessonFn(progressRef.current, id);
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const touchStreak = useCallback(() => {
+    const r = touchStreakFn(progressRef.current);
+    forceUpdate();
+    return r;
+  }, [forceUpdate]);
+
+  const bumpDaily = useCallback(
+    (dqId: string, by = 1) => {
+      bumpDailyFn(progressRef.current, dqId, by);
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const addItem = useCallback(
+    (id: string, qty = 1) => {
+      const inv = progressRef.current.inventory;
+      inv[id] = (inv[id] ?? 0) + qty;
+      forceUpdate();
+    },
+    [forceUpdate],
+  );
+
+  const buyShopItem = useCallback(
+    (id: string, price: number, kind: string) => {
+      const p = progressRef.current;
+      if (p.coins < price) return false;
+      p.coins -= price;
+      if (kind === "cosmetic" && id === "boriSnack") p.boriAffection += 1;
+      p.inventory[id] = (p.inventory[id] ?? 0) + 1;
+      saveProgress(p);
+      forceUpdate();
+      return true;
+    },
+    [forceUpdate],
+  );
+
   const saveNow = useCallback(() => {
-    saveGame(stateRef.current);
+    saveProgress(progressRef.current);
     forceUpdate();
   }, [forceUpdate]);
 
   const value = useMemo<GameStore>(
     () => ({
-      state: stateRef.current,
+      progress: progressRef.current,
       screen,
       settings,
-      pendingBattle,
-      battleOutcome,
+      hasSaveFile,
       setScreen,
       setSettings,
       newGame,
       continueGame,
-      moveTo,
-      setPlayerTile,
+      setArea,
       setFlag,
       advanceQuest,
+      addXp,
+      addCoins,
+      loseHeart,
+      refillHearts,
+      recordAnswer,
+      learnWord,
+      completeLesson,
+      touchStreak,
+      bumpDaily,
       addItem,
-      removeItem,
-      buyItem,
-      useConsumable,
-      equip,
-      startBattle,
-      clearBattle,
-      resolveBattle,
-      clearOutcome,
-      unlockSkill,
+      buyShopItem,
       saveNow,
       forceUpdate,
     }),
-    // stateRef.current identity is stable; tick re-renders consumers
-    [screen, settings, pendingBattle, battleOutcome, newGame, continueGame, moveTo, setPlayerTile, setFlag, advanceQuest, addItem, removeItem, buyItem, useConsumable, equip, startBattle, clearBattle, resolveBattle, clearOutcome, unlockSkill, saveNow, forceUpdate, setSettings],
+    [
+      screen,
+      settings,
+      hasSaveFile,
+      setSettings,
+      newGame,
+      continueGame,
+      setArea,
+      setFlag,
+      advanceQuest,
+      addXp,
+      addCoins,
+      loseHeart,
+      refillHearts,
+      recordAnswer,
+      learnWord,
+      completeLesson,
+      touchStreak,
+      bumpDaily,
+      addItem,
+      buyShopItem,
+      saveNow,
+      forceUpdate,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -291,6 +304,3 @@ export function useGame(): GameStore {
   if (!ctx) throw new Error("useGame must be used within GameStoreProvider");
   return ctx;
 }
-
-// Re-export for battle component to apply exp consistently.
-export { applyExp };

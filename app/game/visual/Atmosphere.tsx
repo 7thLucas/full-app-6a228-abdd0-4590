@@ -1,13 +1,16 @@
 import { useMemo } from "react";
 
-type ParticleTheme = "snow" | "chapel" | "town" | "shrine";
+export type ParticleTheme = "shrine" | "village" | "gate";
 
 interface AtmosphereProps {
   theme: ParticleTheme;
 }
 
-// Deterministic-ish particle field. Generated once per mount; uses CSS animations
+// Deterministic-ish particle field for Hangul Roads areas. Uses CSS animations
 // so it is cheap and never blocks the render loop.
+//   shrine  -> golden motes + rising sparks (sunrise mist)
+//   village -> warm lantern dust + morning fog
+//   gate    -> cold violet embers in black fog (the Silent Gate)
 export function Atmosphere({ theme }: AtmosphereProps) {
   const particles = useMemo(() => buildParticles(theme), [theme]);
 
@@ -30,16 +33,15 @@ export function Atmosphere({ theme }: AtmosphereProps) {
           }}
         />
       ))}
-      {/* fog band */}
-      {(theme === "snow" || theme === "shrine") && (
+      {(theme === "village" || theme === "gate") && (
         <div
           style={{
             position: "absolute",
             inset: 0,
             background:
-              theme === "shrine"
-                ? "linear-gradient(180deg, rgba(40,60,90,0.25), transparent 40%, rgba(20,30,55,0.35))"
-                : "linear-gradient(180deg, rgba(180,200,220,0.12), transparent 50%, rgba(160,180,210,0.18))",
+              theme === "gate"
+                ? "linear-gradient(180deg, rgba(40,30,70,0.3), transparent 40%, rgba(20,15,40,0.4))"
+                : "linear-gradient(180deg, rgba(220,200,170,0.10), transparent 55%, rgba(200,190,170,0.16))",
           }}
         />
       )}
@@ -62,62 +64,49 @@ interface P {
 
 function buildParticles(theme: ParticleTheme): P[] {
   const out: P[] = [];
-  const count = theme === "town" ? 18 : 34;
+  const count = theme === "village" ? 22 : 32;
   for (let i = 0; i < count; i++) {
     const left = Math.random() * 100;
     const top = Math.random() * 100;
     const delay = Math.random() * 8;
-    if (theme === "snow") {
-      out.push({
-        id: i,
-        left,
-        top: -10,
-        size: 2 + Math.random() * 3,
-        color: "rgba(235,245,255,0.9)",
-        opacity: 0.5 + Math.random() * 0.5,
-        glow: false,
-        anim: "coer-snow",
-        duration: 6 + Math.random() * 8,
-        delay,
-      });
-    } else if (theme === "chapel") {
+    if (theme === "shrine") {
       out.push({
         id: i,
         left,
         top,
-        size: 2 + Math.random() * 2.5,
-        color: "rgba(240,200,120,0.9)",
+        size: 2 + Math.random() * 3,
+        color: "rgba(255,224,150,0.9)",
         opacity: 0.4 + Math.random() * 0.5,
-        glow: true,
-        anim: "coer-ember-rise",
-        duration: 5 + Math.random() * 6,
-        delay,
-      });
-    } else if (theme === "shrine") {
-      out.push({
-        id: i,
-        left,
-        top,
-        size: 2 + Math.random() * 3,
-        color: "rgba(150,200,235,0.9)",
-        opacity: 0.35 + Math.random() * 0.5,
         glow: true,
         anim: "coer-float-up",
         duration: 7 + Math.random() * 7,
         delay,
       });
-    } else {
-      // town: drifting dust / firefly motes
+    } else if (theme === "village") {
       out.push({
         id: i,
         left,
         top,
-        size: 2 + Math.random() * 2,
-        color: "rgba(220,200,150,0.7)",
+        size: 2 + Math.random() * 2.4,
+        color: "rgba(240,200,130,0.8)",
         opacity: 0.3 + Math.random() * 0.4,
         glow: true,
+        anim: "coer-ember-rise",
+        duration: 6 + Math.random() * 7,
+        delay,
+      });
+    } else {
+      // gate: cold violet embers
+      out.push({
+        id: i,
+        left,
+        top,
+        size: 2 + Math.random() * 3,
+        color: "rgba(180,120,230,0.85)",
+        opacity: 0.35 + Math.random() * 0.5,
+        glow: true,
         anim: "coer-float-up",
-        duration: 8 + Math.random() * 8,
+        duration: 7 + Math.random() * 7,
         delay,
       });
     }

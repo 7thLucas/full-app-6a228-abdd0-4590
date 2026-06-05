@@ -1,40 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useConfigurables } from "~/modules/configurables";
 import { GameStoreProvider, useGame, type Screen } from "./engine/store";
-import { getMap } from "./data/maps";
-import { getDialogue, DIALOGUES } from "./data/dialogue";
-import { MAIN_QUEST } from "./data/quests";
-import type { MapDef, MapInteractable } from "./data/types";
-import { TitleScene } from "./scenes/TitleScene";
-import { CharacterSelect } from "./scenes/CharacterSelect";
-import { CreditsScreen, SettingsScreen } from "./scenes/SettingsScreen";
+import { setAudioLevels, sfx } from "./engine/sfx";
+import { getArea, type AreaId, type NpcDef } from "./data/gameData";
+import { getLesson, type LessonNode } from "./data/learningData";
+import { MainMenu } from "./scenes/MainMenu";
+import { OnboardingScreen } from "./scenes/OnboardingScreen";
+import { LearningMap } from "./scenes/LearningMap";
 import { ExploreScene } from "./scenes/ExploreScene";
 import { BattleScene } from "./scenes/BattleScene";
-import { EndingScene } from "./scenes/EndingScene";
-import { DialogueBox } from "./ui/DialogueBox";
-import { PauseMenu } from "./ui/PauseMenu";
-import { ShopOverlay } from "./ui/ShopOverlay";
+import { LessonCompleteScreen } from "./scenes/LessonCompleteScreen";
+import { StreakScreen } from "./scenes/StreakScreen";
+import { Wordbook } from "./scenes/Wordbook";
+import { ReviewScreen } from "./scenes/ReviewScreen";
+import { QuestJournal } from "./scenes/QuestJournal";
+import { ShopScreen } from "./scenes/ShopScreen";
+import { SettingsScreen } from "./scenes/SettingsScreen";
+import { DailyQuestScreen } from "./scenes/DailyQuestScreen";
+import { CharacterScreen } from "./scenes/CharacterScreen";
+import { EndingScreen } from "./scenes/EndingScreen";
+import { DialogueBox, type DialogueLine } from "./ui/DialogueBox";
+import { LessonPanel, type LessonResult } from "./ui/LessonPanel";
 import { Hud } from "./ui/Hud";
-import { MobileControls } from "./ui/MobileControls";
-import { setAudioLevels, sfx } from "./engine/sfx";
+import { PauseMenu } from "./ui/PauseMenu";
 
 const ASPECT_W = 16;
 const ASPECT_H = 9;
 
 export function GameRoot() {
-  const { config, loading } = useConfigurables();
-  const initialTextSpeed = (config?.textSpeed as "slow" | "normal" | "fast") || "normal";
-
-  if (loading) {
-    return (
-      <div className="coer-root w-screen h-screen flex items-center justify-center">
-        <div className="coer-heading text-xl coer-flicker">Lighting the candles...</div>
-      </div>
-    );
-  }
-
   return (
-    <GameStoreProvider initialTextSpeed={initialTextSpeed}>
+    <GameStoreProvider>
       <GameShell />
     </GameStoreProvider>
   );
@@ -71,23 +65,15 @@ function GameShell() {
       style={{
         position: "fixed",
         inset: 0,
-        background:
-          "radial-gradient(ellipse at center, #0a0e1a 0%, #05070f 70%, #020308 100%)",
+        background: "radial-gradient(ellipse at center, #0a0e1a 0%, #05070f 70%, #020308 100%)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden",
       }}
     >
-      {/* faint shell ornament */}
       <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "repeating-linear-gradient(45deg, rgba(216,178,90,0.015) 0 2px, transparent 2px 22px)",
-          pointerEvents: "none",
-        }}
+        style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(45deg, rgba(216,178,90,0.015) 0 2px, transparent 2px 22px)", pointerEvents: "none" }}
       />
       <div
         className="coer-vignette"
@@ -98,223 +84,166 @@ function GameShell() {
           border: "1px solid rgba(216,178,90,0.4)",
           borderRadius: 6,
           overflow: "hidden",
-          boxShadow:
-            "0 0 0 1px rgba(0,0,0,0.8), 0 0 40px rgba(0,0,0,0.8), 0 0 60px rgba(216,178,90,0.06)",
+          boxShadow: "0 0 0 1px rgba(0,0,0,0.8), 0 0 40px rgba(0,0,0,0.8), 0 0 60px rgba(216,178,90,0.06)",
         }}
       >
-        <ScreenRouter vpW={vp.w} vpH={vp.h} />
+        <Router vpW={vp.w} vpH={vp.h} />
       </div>
     </div>
   );
 }
 
 type Overlay =
-  | { kind: "dialogue"; sequenceId: string; after?: () => void }
+  | { kind: "dialogue"; lines: DialogueLine[]; after?: () => void }
+  | { kind: "lesson"; lesson: LessonNode }
   | { kind: "pause" }
-  | { kind: "shop" }
-  | { kind: "battle"; enemyId: string; isBoss: boolean; afterFlag?: string; interactableId: string }
   | null;
 
-function ScreenRouter({ vpW, vpH }: { vpW: number; vpH: number }) {
+// Map a lesson's NPC interaction into intro dialogue lines.
+function npcDialogue(npc: NpcDef): DialogueLine[] {
+  const lines: DialogueLine[] = [
+    {
+      speaker: npc.name,
+      portrait: npc.sprite === "bori" ? "bori" : npc.sprite,
+      text: npc.line,
+      korean: npc.korean,
+    },
+  ];
+  return lines;
+}
+
+function Router({ vpW, vpH }: { vpW: number; vpH: number }) {
   const game = useGame();
-  const { config } = useConfigurables();
-  const { screen, setScreen } = game;
+  const { screen, setScreen, progress } = game;
 
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [areaName, setAreaName] = useState(getMap(game.state.world.area).name);
-  const [shakeKey, setShakeKey] = useState(0);
-  const [openedAreas, setOpenedAreas] = useState<Set<string>>(new Set());
+  const [battle, setBattle] = useState<{ enemyId: string; lessonId: string } | null>(null);
+  const [lastResult, setLastResult] = useState<LessonResult | null>(null);
+  const [reviewFromComplete, setReviewFromComplete] = useState(false);
+  // where to go after closing a menu overlay opened from pause
+  const returnScreenRef = useRef<Screen>("explore");
 
-  // sync audio levels with settings
   useEffect(() => {
-    setAudioLevels(game.settings.master, game.settings.sfx);
-  }, [game.settings.master, game.settings.sfx]);
+    setAudioLevels(game.settings.sound ? 70 : 0, game.settings.sound ? 80 : 0);
+  }, [game.settings.sound]);
 
   const paused = overlay !== null;
 
-  // ── Quest progression helper ────────────────────────────────────────────────
-  const tryAdvanceQuest = useCallback(
-    (toIndex: number) => {
-      if (game.state.questIndex < toIndex) {
-        game.advanceQuest(toIndex);
+  // ── Quest progression helper ──────────────────────────────────────────────
+  const advance = useCallback(
+    (to: number) => {
+      if (progress.questIndex < to) {
+        game.advanceQuest(to);
         sfx("quest");
       }
     },
-    [game],
+    [game, progress],
   );
 
-  // ── Area entry: play ambient line first time, set flags ─────────────────────
-  const handleEnterArea = useCallback(
-    (map: MapDef) => {
-      setAreaName(map.name);
-      // mark snowfield entered so the back-to-chapel door appears, etc.
-      if (map.id === "snowfield") game.setFlag("snowfieldEntered");
-
-      if (!openedAreas.has(map.id) && map.ambientDialogueId && map.id !== "chapel") {
-        setOpenedAreas((s) => new Set(s).add(map.id));
-        // chapel opening handled separately at new game
-        setOverlay({ kind: "dialogue", sequenceId: map.ambientDialogueId });
-        // quest beats on first entry
-        if (map.id === "snowfield") tryAdvanceQuest(2);
-        if (map.id === "veyrhold") tryAdvanceQuest(4);
-        if (map.id === "shrine") tryAdvanceQuest(6);
-      } else if (!openedAreas.has(map.id)) {
-        setOpenedAreas((s) => new Set(s).add(map.id));
+  // ── start a lesson (from map or NPC) ──────────────────────────────────────
+  const startLesson = useCallback(
+    (lesson: LessonNode) => {
+      // a boss lesson opens the battle directly
+      if (lesson.kind === "boss") {
+        setBattle({ enemyId: "silenceWisp", lessonId: lesson.id });
+        setScreen("battle");
+        return;
       }
+      // make sure we're in the right area visually
+      const area = lesson.area as AreaId;
+      if (getArea(area) && progress.currentArea !== area) {
+        game.setArea(area);
+      }
+      setScreen("explore");
+      setOverlay({ kind: "lesson", lesson });
     },
-    [game, openedAreas, tryAdvanceQuest],
+    [game, progress, setScreen],
   );
 
-  // ── Interaction dispatch ────────────────────────────────────────────────────
-  const handleInteract = useCallback(
-    (it: MapInteractable, map: MapDef) => {
-      switch (it.kind) {
-        case "door": {
-          if (it.target) {
-            // optional door dialogue (e.g. Edrin gives gear) before transition
-            if (it.dialogueId) {
-              setOverlay({
-                kind: "dialogue",
-                sequenceId: it.dialogueId,
-                after: () => {
-                  if (it.id === "door" && map.id === "chapel") tryAdvanceQuest(2);
-                  game.moveTo(it.target!.area, it.target!.x, it.target!.y);
-                  setOverlay(null);
-                },
-              });
-            } else {
-              game.moveTo(it.target.area, it.target.x, it.target.y);
+  // ── NPC interaction in explore ────────────────────────────────────────────
+  const onInteractNpc = useCallback(
+    (npc: NpcDef) => {
+      const lesson = npc.lessonId ? getLesson(npc.lessonId) : undefined;
+      setOverlay({
+        kind: "dialogue",
+        lines: npcDialogue(npc),
+        after: () => {
+          if (lesson) {
+            if (lesson.kind === "boss") {
+              setOverlay(null);
+              setBattle({ enemyId: "silenceWisp", lessonId: lesson.id });
+              setScreen("battle");
+              return;
             }
-          }
-          break;
-        }
-        case "npc":
-        case "examine": {
-          if (it.dialogueId) {
-            setOverlay({ kind: "dialogue", sequenceId: it.dialogueId });
-            if (it.id === "edrin") tryAdvanceQuest(1);
-          }
-          break;
-        }
-        case "chest": {
-          if (it.oneShotFlag && game.state.flags[it.oneShotFlag]) return;
-          setOverlay({
-            kind: "dialogue",
-            sequenceId: it.dialogueId ?? "chestHerbs",
-            after: () => {
-              if (it.itemId) game.addItem(it.itemId, it.qty ?? 1);
-              if (it.oneShotFlag) game.setFlag(it.oneShotFlag);
-              sfx("item");
-              tryAdvanceQuest(2);
-              setOverlay(null);
-            },
-          });
-          break;
-        }
-        case "save": {
-          setOverlay({
-            kind: "dialogue",
-            sequenceId: it.dialogueId ?? "saveCrystal",
-            after: () => {
-              game.saveNow();
-              sfx("save");
-              tryAdvanceQuest(6);
-              setOverlay(null);
-            },
-          });
-          break;
-        }
-        case "shop": {
-          setOverlay({
-            kind: "dialogue",
-            sequenceId: it.dialogueId ?? "merchantGreet",
-            after: () => setOverlay({ kind: "shop" }),
-          });
-          break;
-        }
-        case "lever": {
-          if (it.oneShotFlag && game.state.flags[it.oneShotFlag]) return;
-          setOverlay({
-            kind: "dialogue",
-            sequenceId: it.dialogueId ?? "shrineLever",
-            after: () => {
-              if (it.oneShotFlag) game.setFlag(it.oneShotFlag);
-              tryAdvanceQuest(7);
-              setOverlay(null);
-            },
-          });
-          break;
-        }
-        case "encounter":
-        case "boss": {
-          if (it.oneShotFlag && game.state.flags[it.oneShotFlag]) return;
-          const enemyId = it.enemyId!;
-          const isBoss = it.kind === "boss";
-          const startBattle = () =>
-            setOverlay({
-              kind: "battle",
-              enemyId,
-              isBoss,
-              afterFlag: it.oneShotFlag,
-              interactableId: it.id,
-            });
-          if (it.dialogueId) {
-            setOverlay({
-              kind: "dialogue",
-              sequenceId: it.dialogueId,
-              after: startBattle,
-            });
+            setOverlay({ kind: "lesson", lesson });
           } else {
-            startBattle();
+            setOverlay(null);
           }
-          break;
-        }
-        default:
-          break;
-      }
+        },
+      });
+      // quest beats
+      if (npc.id === "bori") advance(1);
     },
-    [game, tryAdvanceQuest],
+    [advance, setScreen],
   );
 
-  // ── Battle resolution ───────────────────────────────────────────────────────
-  const handleBattleEnd = useCallback(
-    (
-      result: "victory" | "defeat" | "flee",
-      playerHp: number,
-      playerSp: number,
-      info: { enemyId: string; isBoss: boolean; afterFlag?: string; interactableId: string },
-    ) => {
-      game.state.player.hp = Math.max(result === "defeat" ? 1 : playerHp, result === "defeat" ? 1 : playerHp);
-      game.state.player.sp = playerSp;
+  // ── area exit ─────────────────────────────────────────────────────────────
+  const onExit = useCallback(
+    (to: AreaId, label: string) => {
+      game.setArea(to);
+      sfx("advance");
+      if (to === "village") advance(5);
+      setOverlay({
+        kind: "dialogue",
+        lines: [
+          { speaker: "Bori", portrait: "bori", text: `We've reached ${label}. Let's keep going!` },
+        ],
+      });
+    },
+    [game, advance],
+  );
 
-      if (result === "victory") {
-        if (info.afterFlag) game.setFlag(info.afterFlag);
-        // quest beats
-        if (info.enemyId === "frostWolf") tryAdvanceQuest(3);
-        if (info.isBoss) tryAdvanceQuest(MAIN_QUEST.objectives.length); // complete
-        setShakeKey((s) => s + 1);
-        if (info.isBoss) {
-          // restore a little then go to ending
-          game.state.player.hp = Math.max(1, playerHp);
-          setOverlay(null);
-          setTimeout(() => setScreen("ending"), 400);
-          return;
-        }
-        setOverlay(null);
-      } else if (result === "flee") {
-        setOverlay(null);
+  // ── lesson finished ───────────────────────────────────────────────────────
+  const onLessonComplete = useCallback(
+    (result: LessonResult) => {
+      setOverlay(null);
+      setLastResult(result);
+      if (!result.failed) {
+        // streak ticks on first successful lesson of the day
+        game.touchStreak();
+        // quest beats keyed by lesson id
+        const beats: Record<string, number> = { l1: 2, l2: 3, l3: 4, l4: 6 };
+        if (beats[result.lessonId]) advance(beats[result.lessonId]);
+        game.addXp(0); // ensure level recompute
+      }
+      game.saveNow();
+      setScreen("lessonComplete");
+    },
+    [game, advance, setScreen],
+  );
+
+  // ── battle finished ───────────────────────────────────────────────────────
+  const onBattleEnd = useCallback(
+    (victory: boolean, _stats: { correct: number; xp: number }) => {
+      const lessonId = battle?.lessonId;
+      setBattle(null);
+      if (victory && lessonId) {
+        game.completeLesson(lessonId);
+        game.touchStreak();
+        advance(7); // defeat the Silence Wisp
+        game.bumpDaily("dq5"); // memory flame alive
+        advance(8); // complete first daily lesson
+        game.saveNow();
+        setScreen("ending");
       } else {
-        // defeat: revive at low HP, return to explore (soft game-over)
-        game.state.player.hp = Math.floor(game.state.player.maxHp * 0.3);
-        game.state.player.sp = Math.floor(game.state.player.maxSp * 0.3);
-        setOverlay(null);
+        // retry: back to map
+        setScreen("map");
       }
-      game.forceUpdate();
     },
-    [game, tryAdvanceQuest, setScreen],
+    [battle, game, advance, setScreen],
   );
 
-  // ── Esc to open/close pause while exploring ────────────────────────────────
+  // ── ESC handling in explore ───────────────────────────────────────────────
   useEffect(() => {
     if (screen !== "explore") return;
     function onKey(e: KeyboardEvent) {
@@ -336,95 +265,158 @@ function ScreenRouter({ vpW, vpH }: { vpW: number; vpH: number }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [screen]);
 
-  // ── Screen flows ────────────────────────────────────────────────────────────
-  const startNewGame = useCallback(() => {
-    game.newGame(config.startingCoins ?? 100);
-    setOpenedAreas(new Set(["chapel"]));
-    setScreen("select");
-  }, [game, config.startingCoins, setScreen]);
+  // ── new game / continue ───────────────────────────────────────────────────
+  const beginOnboarding = useCallback(() => setScreen("onboarding"), [setScreen]);
 
-  const beginPlay = useCallback(() => {
-    // chapel opening cutscene as a dialogue overlay once we enter explore
-    setScreen("explore");
-    setAreaName(getMap(game.state.world.area).name);
-    setOverlay({ kind: "dialogue", sequenceId: "opening" });
-  }, [game, setScreen]);
+  const finishOnboarding = useCallback(
+    (level: string, _placement: string, name: string) => {
+      game.newGame(level, name);
+      // opening cutscene -> wake in Letter Shrine
+      setScreen("explore");
+      setOverlay({
+        kind: "dialogue",
+        lines: [
+          { speaker: "Narrator", text: `Long ago, the Letters of Light kept Haneul Road alive with language. Then the words fell silent...` },
+          { speaker: "Narrator", text: `You wake at the ancient Letter Shrine, a notebook glowing in your satchel.` },
+          { speaker: "Bori", portrait: "bori", text: `Oh! A traveler! I'm Bori — a humble fox spirit, and your guide. Touch the glowing letters and I'll teach you to read them.`, korean: "안녕하세요" },
+        ],
+      });
+    },
+    [game, setScreen],
+  );
 
-  const continueGame = useCallback(() => {
+  const continueJourney = useCallback(() => {
     const ok = game.continueGame();
     if (!ok) return;
-    // mark visited areas as opened so we don't replay ambient lines
-    const opened = new Set<string>(game.state.visitedAreas as string[]);
-    setOpenedAreas(opened);
     setScreen("explore");
-    setAreaName(getMap(game.state.world.area).name);
   }, [game, setScreen]);
 
   const returnTitle = useCallback(() => {
+    game.saveNow();
     setOverlay(null);
-    setScreen("title");
-  }, [setScreen]);
+    setBattle(null);
+    setScreen("menu");
+  }, [game, setScreen]);
 
-  // ── Render by screen ────────────────────────────────────────────────────────
-  if (screen === "title") {
+  // ── open a menu screen from pause, remembering where to return ────────────
+  const openMenu = useCallback(
+    (s: Screen) => {
+      returnScreenRef.current = "explore";
+      setOverlay(null);
+      setScreen(s);
+    },
+    [setScreen],
+  );
+
+  // ════════════════════════════ RENDER ═════════════════════════════════════
+
+  if (screen === "menu") {
     return (
-      <TitleScene
-        onNewGame={startNewGame}
-        onContinue={continueGame}
+      <MainMenu
+        hasSave={game.hasSaveFile}
+        onStart={beginOnboarding}
+        onContinue={continueJourney}
+        onDaily={() => setScreen("dailyQuest")}
+        onReview={() => setScreen("review")}
         onSettings={() => setScreen("settings")}
-        onCredits={() => setScreen("credits")}
       />
     );
   }
 
-  if (screen === "select") {
+  if (screen === "onboarding") {
+    return <OnboardingScreen onDone={finishOnboarding} onBack={() => setScreen("menu")} />;
+  }
+
+  if (screen === "map") {
+    return <LearningMap onPickLesson={(l) => startLesson(l)} onClose={() => setScreen("explore")} />;
+  }
+
+  if (screen === "battle" && battle) {
+    const area = getArea(progress.currentArea);
     return (
-      <CharacterSelect onChoose={beginPlay} onBack={() => setScreen("title")} />
+      <BattleScene
+        key={battle.enemyId}
+        enemyId={battle.enemyId}
+        theme={area.theme}
+        viewportW={vpW}
+        viewportH={vpH}
+        onEnd={onBattleEnd}
+      />
     );
   }
 
-  if (screen === "settings") {
-    return <SettingsScreen onBack={() => setScreen("title")} />;
+  if (screen === "lessonComplete" && lastResult) {
+    return (
+      <LessonCompleteScreen
+        result={lastResult}
+        streak={progress.streak}
+        onContinue={() => {
+          if (lastResult.failed) {
+            // retry same lesson
+            const l = getLesson(lastResult.lessonId);
+            game.refillHearts();
+            setScreen("explore");
+            if (l) setOverlay({ kind: "lesson", lesson: l });
+          } else {
+            setScreen("streak");
+          }
+        }}
+        onReview={() => {
+          setReviewFromComplete(true);
+          setScreen("review");
+        }}
+        onMap={() => setScreen("map")}
+      />
+    );
   }
 
-  if (screen === "credits") {
-    return <CreditsScreen onBack={() => setScreen("title")} />;
+  if (screen === "streak") {
+    return <StreakScreen onContinue={() => setScreen("map")} />;
   }
 
   if (screen === "ending") {
-    return (
-      <EndingScene
-        textSpeed={game.settings.textSpeed}
-        onReturnTitle={() => {
-          game.saveNow();
-          returnTitle();
-        }}
-      />
-    );
+    return <EndingScreen onReturn={returnTitle} />;
   }
 
-  // explore (+ overlays)
-  const dialogueSeq =
-    overlay?.kind === "dialogue" ? getDialogue(overlay.sequenceId) ?? DIALOGUES.edrinIdle : null;
+  // ── menu overlays (also reachable from main menu) ─────────────────────────
+  const menuBack = () => {
+    if (reviewFromComplete) {
+      setReviewFromComplete(false);
+      setScreen("lessonComplete");
+      return;
+    }
+    // if we have an active game, go back to explore; otherwise menu
+    setScreen(progress.completedLessons.length > 0 || progress.currentArea !== "shrine" || game.hasSaveFile ? returnScreenRef.current : "menu");
+    // when coming straight from main menu without a started game, go to menu
+  };
 
+  if (screen === "wordbook") return <Wordbook onClose={() => setScreen("explore")} />;
+  if (screen === "review") return <ReviewScreen onClose={menuBack} />;
+  if (screen === "quests") return <QuestJournal onClose={() => setScreen("explore")} />;
+  if (screen === "character") return <CharacterScreen onClose={() => setScreen("explore")} />;
+  if (screen === "shop") return <ShopScreen onClose={() => setScreen("explore")} />;
+  if (screen === "settings")
+    return <SettingsScreen onClose={() => setScreen(game.hasSaveFile || progress.completedLessons.length ? "explore" : "menu")} />;
+  if (screen === "dailyQuest") return <DailyQuestScreen onClose={() => setScreen(game.hasSaveFile || progress.completedLessons.length ? "explore" : "menu")} />;
+
+  // ── explore (+ overlays) ──────────────────────────────────────────────────
+  const area = getArea(progress.currentArea);
   return (
     <div style={{ position: "absolute", inset: 0 }}>
       <ExploreScene
+        area={progress.currentArea}
         viewportW={vpW}
         viewportH={vpH}
-        onInteract={handleInteract}
-        onEnterArea={handleEnterArea}
         paused={paused}
-        shakeKey={shakeKey}
+        onInteractNpc={onInteractNpc}
+        onExit={onExit}
       />
 
-      <Hud areaName={areaName} />
+      <Hud areaName={area.name} goal={area.goal} />
 
-      {(config.showMobileControls ?? true) && !paused && <MobileControls />}
-
-      {overlay?.kind === "dialogue" && dialogueSeq && (
+      {overlay?.kind === "dialogue" && (
         <DialogueBox
-          sequence={dialogueSeq}
+          lines={overlay.lines}
           textSpeed={game.settings.textSpeed}
           onComplete={() => {
             const after = overlay.after;
@@ -434,32 +426,23 @@ function ScreenRouter({ vpW, vpH }: { vpW: number; vpH: number }) {
         />
       )}
 
-      {overlay?.kind === "pause" && (
-        <PauseMenu
-          onClose={() => setOverlay(null)}
-          onReturnTitle={() => {
-            game.saveNow();
-            returnTitle();
-          }}
+      {overlay?.kind === "lesson" && (
+        <LessonPanel
+          lesson={overlay.lesson}
+          onComplete={onLessonComplete}
+          onAbort={() => setOverlay(null)}
         />
       )}
 
-      {overlay?.kind === "shop" && <ShopOverlay onClose={() => setOverlay(null)} />}
-
-      {overlay?.kind === "battle" && (
-        <BattleScene
-          key={`${overlay.enemyId}-${overlay.interactableId}`}
-          enemyId={overlay.enemyId}
-          isBoss={overlay.isBoss}
-          battleTheme={getMap(game.state.world.area).theme}
-          onEnd={(result, hp, sp) =>
-            handleBattleEnd(result, hp, sp, {
-              enemyId: overlay.enemyId,
-              isBoss: overlay.isBoss,
-              afterFlag: overlay.afterFlag,
-              interactableId: overlay.interactableId,
-            })
-          }
+      {overlay?.kind === "pause" && (
+        <PauseMenu
+          onResume={() => setOverlay(null)}
+          onOpen={openMenu}
+          onSave={() => {
+            game.saveNow();
+            setOverlay(null);
+          }}
+          onTitle={returnTitle}
         />
       )}
     </div>

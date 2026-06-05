@@ -79,7 +79,7 @@ export function PixelCharacter({
         }}
       />
       <div className={moving ? "coer-walk" : bob ? "coer-bob" : "coer-breathe"}>
-        <Sprite kind={kind} size={size} facing={facing} />
+        <Sprite kind={kind} size={size} facing={facing === "left" ? "left" : "right"} />
       </div>
     </div>
   );

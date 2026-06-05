@@ -1,35 +1,25 @@
-import { useId } from "react";
-
-// Original placeholder pixel-style sprites built from SVG shapes. No copyrighted
-// assets — each is an abstract silhouette matching the design brief.
+// Original placeholder pixel-style sprites built from SVG shapes for
+// Hangul Roads. No copyrighted assets — every figure is an abstract silhouette.
 
 export type SpriteKind =
-  | "kael"
-  | "edrin"
-  | "townsfolk"
-  | "merchant"
-  | "frostWolf"
-  | "banditScout"
-  | "iceWisp"
-  | "hollowGuard"
-  | "chest"
-  | "crystal"
-  | "lever"
-  | "poster"
-  | "anvil"
-  | "altar"
-  | "bed"
-  | "door"
-  | "stall";
+  | "arin" // player: cloaked traveler with satchel + glowing notebook
+  | "bori" // glowing fox spirit guide
+  | "elder"
+  | "shopkeeper"
+  | "guard"
+  | "child"
+  | "wisp" // Silence Wisp boss
+  | "lantern"
+  | "tablet";
 
 interface SpriteProps {
   kind: SpriteKind;
   size?: number;
   className?: string;
-  facing?: "up" | "down" | "left" | "right";
+  facing?: "left" | "right";
 }
 
-export function Sprite({ kind, size = 40, className, facing = "down" }: SpriteProps) {
+export function Sprite({ kind, size = 40, className, facing = "right" }: SpriteProps) {
   const flip = facing === "left";
   return (
     <svg
@@ -52,279 +42,178 @@ export function Sprite({ kind, size = 40, className, facing = "down" }: SpritePr
 
 function renderSprite(kind: SpriteKind) {
   switch (kind) {
-    case "kael":
-      return <KaelSprite />;
-    case "edrin":
-      return <EdrinSprite />;
-    case "townsfolk":
-      return <TownsfolkSprite />;
-    case "merchant":
-      return <MerchantSprite />;
-    case "frostWolf":
-      return <FrostWolfSprite />;
-    case "banditScout":
-      return <BanditScoutSprite />;
-    case "iceWisp":
-      return <IceWispSprite />;
-    case "hollowGuard":
-      return <HollowGuardSprite />;
-    case "chest":
-      return <ChestSprite />;
-    case "crystal":
-      return <CrystalSprite />;
-    case "lever":
-      return <LeverSprite />;
-    case "poster":
-      return <PosterSprite />;
-    case "anvil":
-      return <AnvilSprite />;
-    case "altar":
-      return <AltarSprite />;
-    case "bed":
-      return <BedSprite />;
-    case "door":
-      return <DoorSprite />;
-    case "stall":
-      return <StallSprite />;
+    case "arin":
+      return <ArinSprite />;
+    case "bori":
+      return <BoriSprite />;
+    case "elder":
+      return <ElderSprite />;
+    case "shopkeeper":
+      return <ShopkeeperSprite />;
+    case "guard":
+      return <GuardSprite />;
+    case "child":
+      return <ChildSprite />;
+    case "wisp":
+      return <WispSprite />;
+    case "lantern":
+      return <LanternSprite />;
+    case "tablet":
+      return <TabletSprite />;
     default:
       return null;
   }
 }
 
-// ── Kael: dark armored figure with red scarf ─────────────────────────────────
-function KaelSprite() {
+// ── Arin: cloaked traveler, satchel, glowing notebook ────────────────────────
+function ArinSprite() {
   return (
     <g>
-      <ellipse cx="16" cy="29" rx="9" ry="2.5" fill="#000" opacity="0.35" />
+      <ellipse cx="16" cy="29" rx="8" ry="2.4" fill="#000" opacity="0.32" />
       {/* legs */}
-      <rect x="11" y="22" width="4" height="7" fill="#2a2f3d" />
-      <rect x="17" y="22" width="4" height="7" fill="#2a2f3d" />
-      {/* body armor */}
-      <rect x="10" y="13" width="12" height="11" rx="1.5" fill="#3a4154" />
-      <rect x="10" y="13" width="12" height="3" fill="#4a5269" />
-      {/* scarf */}
-      <rect x="11" y="12" width="10" height="3" fill="#b23a3a" />
-      <rect x="9" y="14" width="2" height="6" fill="#9c2f2f" />
-      {/* head */}
-      <rect x="12" y="6" width="8" height="7" rx="1.5" fill="#d8b08a" />
-      <rect x="12" y="6" width="8" height="3" fill="#3a3026" />
-      {/* shield arm */}
-      <rect x="6" y="15" width="4" height="8" rx="1" fill="#5a6173" />
-      {/* sword glint */}
-      <rect x="23" y="11" width="2" height="11" fill="#c8cdd8" />
-      <rect x="22" y="20" width="4" height="2" fill="#8a6a3a" />
+      <rect x="12" y="22" width="3.4" height="7" fill="#3a3550" />
+      <rect x="16.6" y="22" width="3.4" height="7" fill="#3a3550" />
+      {/* cloak */}
+      <path d="M9 13 L23 13 L24 25 L8 25 Z" fill="#3f5e7e" />
+      <path d="M9 13 L23 13 L23 17 L9 17 Z" fill="#4f739a" />
+      {/* hood/head */}
+      <rect x="12" y="6" width="8" height="7" rx="1.6" fill="#e6c6a0" />
+      <path d="M11 6 Q16 2 21 6 L21 9 L11 9 Z" fill="#2e4a66" />
+      {/* satchel strap */}
+      <rect x="10" y="14" width="12" height="2" fill="#7a5a36" transform="rotate(8 16 15)" />
+      {/* glowing notebook in hand */}
+      <rect x="6" y="17" width="6" height="7" rx="1" fill="#d8b25a" />
+      <rect x="6" y="17" width="6" height="7" rx="1" fill="none" stroke="#ffe9a8" strokeWidth="0.6" />
+      <circle cx="9" cy="20.5" r="4.5" fill="#ffe9a8" opacity="0.25" />
     </g>
   );
 }
 
-// ── Edrin: cloaked old healer with staff ─────────────────────────────────────
-function EdrinSprite() {
+// ── Bori: glowing fox spirit (original, not an owl) ──────────────────────────
+function BoriSprite() {
   return (
     <g>
-      <ellipse cx="16" cy="29" rx="8" ry="2.5" fill="#000" opacity="0.3" />
-      {/* robe */}
-      <path d="M10 14 L22 14 L24 29 L8 29 Z" fill="#5b4a6b" />
-      <path d="M10 14 L22 14 L23 20 L9 20 Z" fill="#6d5a80" />
-      {/* hood */}
-      <path d="M11 7 Q16 3 21 7 L21 14 L11 14 Z" fill="#4a3c58" />
-      {/* face shadow */}
-      <rect x="13" y="9" width="6" height="4" rx="1" fill="#c9a98a" />
-      <rect x="13" y="9" width="6" height="1.5" fill="#9c8270" />
-      {/* staff */}
-      <rect x="24" y="6" width="1.6" height="22" fill="#7a5a3a" />
-      <circle cx="24.8" cy="6" r="2.4" fill="#9ad0e0" opacity="0.9" />
-      <circle cx="24.8" cy="6" r="3.6" fill="#9ad0e0" opacity="0.25" />
+      <ellipse cx="16" cy="28" rx="7" ry="2" fill="#caa24e" opacity="0.3" />
+      {/* glow aura */}
+      <circle cx="16" cy="16" r="11" fill="#ffd98a" opacity="0.16" />
+      {/* body */}
+      <path d="M9 18 Q9 12 16 12 Q23 12 23 18 L22 23 Q16 25 10 23 Z" fill="#e8923c" />
+      <path d="M11 20 Q16 22 21 20 L20 23 Q16 24 12 23 Z" fill="#fff1d6" />
+      {/* ears */}
+      <path d="M10 13 L8 7 L13 11 Z" fill="#e8923c" />
+      <path d="M22 13 L24 7 L19 11 Z" fill="#e8923c" />
+      <path d="M10.5 12 L9.5 9 L12 11 Z" fill="#2a1a12" />
+      <path d="M21.5 12 L22.5 9 L20 11 Z" fill="#2a1a12" />
+      {/* eyes */}
+      <circle cx="13" cy="16" r="1.3" fill="#2a1a12" />
+      <circle cx="19" cy="16" r="1.3" fill="#2a1a12" />
+      {/* nose */}
+      <path d="M15 18 L17 18 L16 19.4 Z" fill="#2a1a12" />
+      {/* glowing tail */}
+      <path d="M22 20 Q28 18 27 24 Q24 26 22 23 Z" fill="#ffd98a" opacity="0.9" />
     </g>
   );
 }
 
-function TownsfolkSprite() {
-  return (
-    <g>
-      <ellipse cx="16" cy="29" rx="7" ry="2.2" fill="#000" opacity="0.28" />
-      <path d="M11 14 L21 14 L22 29 L10 29 Z" fill="#6a5b48" />
-      <rect x="12" y="7" width="8" height="7" rx="1.5" fill="#d8b08a" />
-      <rect x="12" y="6" width="8" height="3" fill="#4a3f30" />
-      <rect x="11" y="14" width="10" height="3" fill="#8a7456" />
-    </g>
-  );
-}
-
-function MerchantSprite() {
+// ── Village Elder: long robe, top-knot hat ───────────────────────────────────
+function ElderSprite() {
   return (
     <g>
       <ellipse cx="16" cy="29" rx="8" ry="2.4" fill="#000" opacity="0.3" />
-      <path d="M10 14 L22 14 L23 29 L9 29 Z" fill="#3f5e54" />
-      <rect x="12" y="7" width="8" height="7" rx="1.5" fill="#d8b08a" />
+      <path d="M10 13 L22 13 L24 29 L8 29 Z" fill="#5b6b80" />
+      <path d="M10 13 L22 13 L23 19 L9 19 Z" fill="#6d7d92" />
+      <rect x="12" y="7" width="8" height="7" rx="1.5" fill="#e6c6a0" />
+      {/* gat (traditional hat) */}
+      <rect x="11" y="5" width="10" height="2.4" fill="#1a1a22" />
+      <rect x="13.5" y="2.5" width="5" height="3" rx="1" fill="#1a1a22" />
+      {/* white beard */}
+      <path d="M13 12 L19 12 L17 16 L15 16 Z" fill="#e8e4da" />
+    </g>
+  );
+}
+
+function ShopkeeperSprite() {
+  return (
+    <g>
+      <ellipse cx="16" cy="29" rx="8" ry="2.4" fill="#000" opacity="0.3" />
+      <path d="M10 14 L22 14 L23 29 L9 29 Z" fill="#7a3f4a" />
+      <rect x="12" y="7" width="8" height="7" rx="1.5" fill="#e6c6a0" />
       <path d="M11 6 L21 6 L22 8 L10 8 Z" fill="#caa24e" />
       <rect x="10" y="15" width="12" height="2.4" fill="#caa24e" />
+      <rect x="14" y="9" width="4" height="2" fill="#2a1a12" />
     </g>
   );
 }
 
-// ── Frost Wolf: icy blue silhouette ──────────────────────────────────────────
-function FrostWolfSprite() {
-  return (
-    <g>
-      <ellipse cx="16" cy="27" rx="11" ry="2.6" fill="#000" opacity="0.3" />
-      <path d="M4 22 Q6 14 14 15 L24 14 Q29 13 29 18 L27 23 Q20 25 13 24 L7 24 Z" fill="#5b8fb8" />
-      <path d="M24 14 L29 9 L28 16 Z" fill="#7fb4d6" />
-      <path d="M23 15 L26 11 L27 17 Z" fill="#9ecbe6" />
-      <circle cx="26" cy="16" r="1.2" fill="#dff2ff" />
-      <path d="M5 22 L3 27 L7 24 Z" fill="#4a7aa0" />
-      <rect x="9" y="23" width="2.5" height="5" fill="#4a7aa0" />
-      <rect x="19" y="23" width="2.5" height="5" fill="#4a7aa0" />
-    </g>
-  );
-}
-
-function BanditScoutSprite() {
+function GuardSprite() {
   return (
     <g>
       <ellipse cx="16" cy="29" rx="8" ry="2.4" fill="#000" opacity="0.3" />
-      <path d="M11 14 L21 14 L22 29 L10 29 Z" fill="#4a3f33" />
-      <rect x="12" y="7" width="8" height="7" rx="1.5" fill="#c9a98a" />
-      <rect x="11" y="9" width="10" height="2.4" fill="#2a2a2a" />
-      <rect x="23" y="9" width="1.6" height="13" fill="#b0b6c0" />
-      <rect x="6" y="13" width="4" height="3" fill="#7a3a3a" />
+      <rect x="11" y="14" width="10" height="11" rx="1" fill="#43506a" />
+      <rect x="11" y="14" width="10" height="3" fill="#566488" />
+      <rect x="12" y="7" width="8" height="7" rx="1.5" fill="#e6c6a0" />
+      <rect x="11" y="5" width="10" height="3" rx="1" fill="#2e3650" />
+      {/* spear */}
+      <rect x="24" y="4" width="1.6" height="22" fill="#7a5a3a" />
+      <path d="M24.8 2 L26.4 6 L23.2 6 Z" fill="#c8cdd8" />
+      <rect x="12" y="22" width="3.4" height="6" fill="#2e3650" />
+      <rect x="16.6" y="22" width="3.4" height="6" fill="#2e3650" />
     </g>
   );
 }
 
-function IceWispSprite() {
+function ChildSprite() {
   return (
     <g>
-      <ellipse cx="16" cy="28" rx="6" ry="2" fill="#000" opacity="0.2" />
-      <circle cx="16" cy="15" r="7" fill="#bfe6f5" opacity="0.85" />
-      <circle cx="16" cy="15" r="10" fill="#9ad0e0" opacity="0.25" />
-      <circle cx="13" cy="13" r="1.4" fill="#1b3a4a" />
-      <circle cx="19" cy="13" r="1.4" fill="#1b3a4a" />
-      <path d="M12 20 L16 26 L20 20 Z" fill="#bfe6f5" opacity="0.7" />
+      <ellipse cx="16" cy="29" rx="6" ry="2" fill="#000" opacity="0.28" />
+      <path d="M12 18 L20 18 L21 29 L11 29 Z" fill="#c87a3c" />
+      <rect x="13" y="12" width="6" height="6" rx="1.5" fill="#e6c6a0" />
+      <rect x="12.5" y="11" width="7" height="2.5" fill="#2a1a12" />
+      <circle cx="15" cy="15" r="0.9" fill="#2a1a12" />
+      <circle cx="17.6" cy="15" r="0.9" fill="#2a1a12" />
     </g>
   );
 }
 
-// ── Hollow Guard: dark figure with glowing black-sun core ─────────────────────
-function HollowGuardSprite() {
+// ── Silence Wisp boss: swirl of black fog with flickering letters ────────────
+function WispSprite() {
   return (
     <g>
-      <ellipse cx="16" cy="29" rx="11" ry="2.8" fill="#000" opacity="0.4" />
-      <path d="M8 12 L24 12 L26 28 L6 28 Z" fill="#1c1828" />
-      <path d="M8 12 L24 12 L25 18 L7 18 Z" fill="#2a2440" />
-      <rect x="11" y="4" width="10" height="9" rx="2" fill="#15121f" />
-      <rect x="12" y="6" width="8" height="3" fill="#3a2f5a" opacity="0.7" />
-      {/* black-sun core */}
-      <circle cx="16" cy="20" r="3.4" fill="#0a0710" />
-      <circle cx="16" cy="20" r="3.4" fill="none" stroke="#c75bff" strokeWidth="1" opacity="0.9" />
-      <circle cx="16" cy="20" r="6" fill="#c75bff" opacity="0.18" />
-      {/* shoulder spikes */}
-      <path d="M6 12 L9 8 L10 13 Z" fill="#2a2440" />
-      <path d="M26 12 L23 8 L22 13 Z" fill="#2a2440" />
+      <ellipse cx="16" cy="28" rx="9" ry="2.4" fill="#000" opacity="0.35" />
+      <circle cx="16" cy="15" r="11" fill="#1a1428" opacity="0.92" />
+      <circle cx="16" cy="15" r="13" fill="#6a4aa0" opacity="0.18" />
+      {/* swirling fog tendrils */}
+      <path d="M6 18 Q3 12 9 10" stroke="#3a2f5a" strokeWidth="2" fill="none" opacity="0.7" />
+      <path d="M26 18 Q29 12 23 10" stroke="#3a2f5a" strokeWidth="2" fill="none" opacity="0.7" />
+      {/* hollow eyes */}
+      <ellipse cx="12.5" cy="14" rx="1.6" ry="2.2" fill="#c75bff" opacity="0.9" />
+      <ellipse cx="19.5" cy="14" rx="1.6" ry="2.2" fill="#c75bff" opacity="0.9" />
+      {/* flickering broken letters */}
+      <text x="9" y="22" fontSize="5" fill="#9a7ad0" opacity="0.7">ㅁ</text>
+      <text x="19" y="23" fontSize="5" fill="#9a7ad0" opacity="0.7">ㄱ</text>
     </g>
   );
 }
 
-// ── Props ────────────────────────────────────────────────────────────────────
-function ChestSprite() {
+function LanternSprite() {
   return (
     <g>
-      <ellipse cx="16" cy="27" rx="8" ry="2" fill="#000" opacity="0.3" />
-      <rect x="8" y="16" width="16" height="10" rx="1" fill="#6a4a2a" />
-      <path d="M8 16 Q16 10 24 16 Z" fill="#7a5a36" />
-      <rect x="8" y="18" width="16" height="2" fill="#caa24e" />
-      <rect x="14" y="18" width="4" height="5" fill="#caa24e" />
+      <rect x="14.5" y="4" width="3" height="6" fill="#3a2e22" />
+      <rect x="11" y="10" width="10" height="13" rx="2" fill="#5a4632" />
+      <rect x="12.5" y="12" width="7" height="9" rx="1.5" fill="#ffd98a" />
+      <circle cx="16" cy="16.5" r="6" fill="#ffd98a" opacity="0.3" />
+      <rect x="11" y="22" width="10" height="2" fill="#3a2e22" />
     </g>
   );
 }
 
-function CrystalSprite() {
+function TabletSprite() {
   return (
     <g>
-      <ellipse cx="16" cy="28" rx="6" ry="1.8" fill="#3a7fb0" opacity="0.4" />
-      <path d="M16 4 L22 16 L16 28 L10 16 Z" fill="#6fc3e8" opacity="0.9" />
-      <path d="M16 4 L22 16 L16 28 L10 16 Z" fill="none" stroke="#bfe6f5" strokeWidth="0.8" />
-      <path d="M16 4 L16 28" stroke="#dff2ff" strokeWidth="0.6" opacity="0.6" />
+      <ellipse cx="16" cy="28" rx="8" ry="2" fill="#000" opacity="0.3" />
+      <path d="M9 26 L9 10 Q16 5 23 10 L23 26 Z" fill="#6a7382" />
+      <path d="M9 26 L9 10 Q16 5 23 10 L23 26 Z" fill="none" stroke="#d8b25a" strokeWidth="0.8" />
+      <text x="11" y="18" fontSize="7" fill="#d8b25a">가</text>
     </g>
   );
-}
-
-function LeverSprite() {
-  return (
-    <g>
-      <rect x="12" y="20" width="8" height="6" rx="1" fill="#444a58" />
-      <rect x="15" y="8" width="2" height="13" fill="#7a8090" transform="rotate(18 16 16)" />
-      <circle cx="20" cy="8" r="2.4" fill="#caa24e" />
-    </g>
-  );
-}
-
-function PosterSprite() {
-  return (
-    <g>
-      <rect x="9" y="6" width="14" height="18" rx="0.5" fill="#d8c8a8" />
-      <rect x="9" y="6" width="14" height="18" rx="0.5" fill="none" stroke="#6a5b48" strokeWidth="1" />
-      <rect x="12" y="9" width="8" height="6" fill="#8a7456" />
-      <rect x="11" y="17" width="10" height="1.6" fill="#5a4a38" />
-      <rect x="11" y="20" width="7" height="1.6" fill="#5a4a38" />
-    </g>
-  );
-}
-
-function AnvilSprite() {
-  return (
-    <g>
-      <ellipse cx="16" cy="27" rx="9" ry="2" fill="#000" opacity="0.3" />
-      <rect x="11" y="22" width="10" height="5" fill="#3a3f4a" />
-      <path d="M7 16 L25 16 L22 20 L10 20 Z" fill="#5a6070" />
-      <path d="M25 16 L29 18 L25 19 Z" fill="#5a6070" />
-    </g>
-  );
-}
-
-function AltarSprite() {
-  return (
-    <g>
-      <rect x="9" y="16" width="14" height="10" fill="#5a5560" />
-      <rect x="9" y="16" width="14" height="3" fill="#6a6470" />
-      <rect x="13" y="8" width="6" height="8" fill="#7a7480" />
-      <circle cx="16" cy="9" r="2.4" fill="#f0c66a" opacity="0.9" />
-      <circle cx="16" cy="9" r="4" fill="#f0c66a" opacity="0.25" />
-    </g>
-  );
-}
-
-function BedSprite() {
-  return (
-    <g>
-      <rect x="6" y="16" width="20" height="10" rx="1.5" fill="#4a4250" />
-      <rect x="6" y="16" width="7" height="10" rx="1.5" fill="#cfc2b0" />
-      <rect x="6" y="20" width="20" height="6" fill="#6a4a3a" />
-    </g>
-  );
-}
-
-function DoorSprite() {
-  return (
-    <g>
-      <rect x="9" y="6" width="14" height="20" rx="2" fill="#3a2e22" />
-      <rect x="11" y="8" width="10" height="16" rx="1.5" fill="#5a4632" />
-      <rect x="11" y="8" width="10" height="3" fill="#6a5440" />
-      <circle cx="19" cy="16" r="1.2" fill="#caa24e" />
-    </g>
-  );
-}
-
-function StallSprite() {
-  return (
-    <g>
-      <rect x="7" y="16" width="18" height="9" fill="#5a4a36" />
-      <path d="M5 16 L27 16 L24 10 L8 10 Z" fill="#7a3a3a" />
-      <path d="M8 10 L24 10 L24 13 L8 13 Z" fill="#caa24e" opacity="0.5" />
-    </g>
-  );
-}
-
-// Standalone hook-free export for combat scenes needing a glow color per enemy.
-export function useStableId(): string {
-  return useId();
 }

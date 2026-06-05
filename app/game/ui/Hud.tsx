@@ -1,57 +1,54 @@
-import { useEffect, useState } from "react";
 import { useGame } from "../engine/store";
-import { MAIN_QUEST } from "../data/quests";
-import { StatBar, KeyHint } from "../ui/primitives";
+import { levelForXp, nextLevel } from "../data/learningData";
+import { KeyHint } from "./primitives";
 
-// Top-left location label (fades in on area change), current objective, mini
-// HP/SP, and contextual button hints along the bottom.
-export function Hud({ areaName }: { areaName: string }) {
+// Exploration HUD: area, learning goal, hearts, XP bar, Memory Flame streak.
+export function Hud({ areaName, goal }: { areaName: string; goal: string }) {
   const game = useGame();
-  const p = game.state.player;
-  const idx = game.state.questIndex;
-  const objective =
-    idx < MAIN_QUEST.objectives.length
-      ? MAIN_QUEST.objectives[idx].text
-      : "Chapter complete.";
-
-  const [locKey, setLocKey] = useState(0);
-  useEffect(() => setLocKey((k) => k + 1), [areaName]);
+  const { progress } = game;
+  const lvl = levelForXp(progress.xp);
+  const nxt = nextLevel(progress.xp);
+  const xpInto = progress.xp - lvl.xpRequired;
+  const xpSpan = nxt ? nxt.xpRequired - lvl.xpRequired : 1;
+  const xpPct = nxt ? Math.min(100, (xpInto / xpSpan) * 100) : 100;
 
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 45 }}>
-      {/* location name */}
-      <div
-        key={`loc-${locKey}`}
-        className="coer-fade-in"
-        style={{ position: "absolute", top: 12, left: 14 }}
-      >
-        <div className="coer-heading text-lg" style={{ textShadow: "0 2px 8px rgba(0,0,0,0.9)" }}>
-          {areaName}
+    <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
+      <div className="flex items-start justify-between p-2.5 gap-2">
+        {/* left: area + goal */}
+        <div className="coer-panel px-3 py-2 max-w-[280px]">
+          <div className="text-[11px] uppercase tracking-wider text-[#caa24e]">Area</div>
+          <div className="text-sm text-[#e9cf86]">{areaName}</div>
+          <div className="text-[11px] text-[#bfb59c] mt-1">Goal: {goal}</div>
         </div>
-        <div className="text-[11px] text-[#cdbf9a] mt-0.5 max-w-[260px]" style={{ textShadow: "0 1px 4px #000" }}>
-          ▸ {objective}
+
+        {/* right: vitals */}
+        <div className="coer-panel px-3 py-2 min-w-[180px]">
+          <div className="flex items-center gap-1 mb-1">
+            {Array.from({ length: progress.maxHearts }).map((_, i) => (
+              <span key={i} className={i < progress.hearts ? "text-rose-400" : "text-[#3a3340]"}>♥</span>
+            ))}
+            <span className="ml-auto flex items-center gap-1 text-amber-300 text-xs">
+              <span className="coer-flicker">🔥</span> Day {progress.streak}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-[#bfb59c] mb-0.5">
+            <span>L{lvl.level} {lvl.title}</span>
+            <span>{nxt ? `${xpInto}/${xpSpan} XP` : "MAX"}</span>
+          </div>
+          <div className="h-2 rounded-full bg-black/50 overflow-hidden border border-black/60">
+            <div className="h-full" style={{ width: `${xpPct}%`, background: "linear-gradient(90deg,#caa24e,#ffd98a)", transition: "width 0.45s" }} />
+          </div>
+          <div className="mt-1 text-[10px] text-[#caa24e] text-right">🪙 {progress.coins}</div>
         </div>
       </div>
 
-      {/* mini HP/SP */}
-      <div
-        style={{ position: "absolute", top: 12, right: 14, width: 150 }}
-        className="space-y-1"
-      >
-        <StatBar value={p.hp} max={p.maxHp} color="hp" label="HP" compact />
-        <StatBar value={p.sp} max={p.maxSp} color="sp" label="SP" compact />
-        <div className="text-right text-[11px] text-[#e9cf86]">Lv {p.level} · ⛃ {p.coins}</div>
-      </div>
-
-      {/* button hints */}
-      <div
-        style={{ position: "absolute", bottom: 12, left: 14 }}
-        className="hidden sm:flex items-center gap-3 opacity-80"
-      >
-        <KeyHint keys="WASD" label="Move" />
-        <KeyHint keys="E" label="Interact" />
-        <KeyHint keys="Shift" label="Dash" />
-        <KeyHint keys="Esc" label="Menu" />
+      <div className="px-3 mt-0.5">
+        <div className="coer-panel inline-flex gap-3 px-3 py-1 pointer-events-auto">
+          <KeyHint keys="A / D" label="Walk" />
+          <KeyHint keys="E" label="Interact" />
+          <KeyHint keys="Esc" label="Menu" />
+        </div>
       </div>
     </div>
   );
