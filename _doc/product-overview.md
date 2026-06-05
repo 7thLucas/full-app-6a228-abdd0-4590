@@ -156,8 +156,9 @@ placeholder art.
 - **React + TypeScript** frontend, runs directly in the browser.
 - Canvas / Pixi / Phaser-style rendering where available; otherwise React components plus
   canvas-style rendering.
-- **Desktop-first** with keyboard controls (move, interact, advance dialogue, answer
-  prompts) and mouse for UI; mobile-friendly on-screen controls as a secondary layer.
+- **Desktop-first** with keyboard controls — **WASD / arrow keys for 4-direction movement**,
+  Shift to dash, E to interact, Esc for menu, plus advancing dialogue and answering prompts —
+  and mouse for UI; mobile-friendly on-screen controls as a secondary layer.
 - **localStorage** save/load (chapter progress, Wordbook, Memory Flame streak, XP/level);
   a returning learner resumes their place.
 - Expandable, data-driven structure for learning content: Hangul letters, greetings/vocab,
