@@ -127,7 +127,7 @@ A **2.5D pixel-art diorama**: 2D pixel sprites in layered worlds with depth, atm
 lighting, soft bloom, vignette, parallax, fog, warm lantern glow, and cinematic camera
 framing. Settings: warm taverns, misty forests, cobblestone towns, ancient ruins,
 candlelit interiors. Subtle animated particles (dust, fireflies, embers, fog), torch
-flicker, idle breathing, floating damage numbers. **Nostalgic but premium** — never
+flicker, idle breathing, floating damage numbers. **Nostalgic, melancholic, but premium** — never
 photorealistic, never generic browser styling.
 
 **UI direction:** dark fantasy shell around a centered **16:9 viewport**. Dark navy/black
