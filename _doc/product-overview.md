@@ -50,9 +50,13 @@ and quiz **Korean greetings** (e.g. *annyeonghaseyo* hello, *gamsahamnida* thank
 Advancing each conversation requires choosing/using the correct greeting, rewarding XP and
 new Wordbook entries. The village leads the learner toward the chapter's boss.
 
-### Boss — the **Silence Wisp** (learning-driven battle)
-Chapter 1 culminates in a turn-based HD-2D battle against the **Silence Wisp**, a spirit
-that feeds on hesitation. The player attacks by answering Korean prompts drawn from
+### The **Silent Gate** & boss — the **Silence Wisp** (learning-driven battle)
+Chapter 1 culminates at the **Silent Gate**, a dramatic third explorable 2.5D area: an
+ancient stone gate at the end of a curving path where dark fog leaks out and broken Hangul
+floats in the air. The learner walks the gate's approach (still full 4-direction diorama
+exploration) until nearing it triggers a cinematic transition into a turn-based HD-2D battle
+against the **Silence Wisp**, a spirit that feeds on hesitation. The player attacks by
+answering Korean prompts drawn from
 Chapters 0–1:
 - **Meaning Break** — a correct answer lands an attack on the Wisp.
 - **Fluency Combo** — chaining consecutive correct answers builds a combo for escalating
