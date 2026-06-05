@@ -1,0 +1,62 @@
+<style>
+  .mode-landscape .sl-world { flex-direction: row; }
+  .mode-portrait  .sl-world { flex-direction: column; }
+  .mode-landscape .sl-world-visual { width: 40%; height: 100%; }
+  .mode-portrait  .sl-world-visual { width: 100%; height: 30%; }
+</style>
+
+<section class="w-full h-full overflow-auto bg-white">
+  <div class="sl-world flex w-full h-full">
+
+    <!-- Content -->
+    <div class="flex flex-col justify-center p-12" style="flex:1; min-width:0;">
+      <span class="text-sm tracking-[0.3em] font-semibold uppercase" style="color:#b8862f;">The World</span>
+      <h2 class="text-4xl font-serif font-bold mt-2 mb-3" style="color:#0f1729;">A chibi pixel hero inside a living 2.5D diorama</h2>
+      <p class="text-[0.95rem] leading-relaxed mb-6" style="color:#3f4658; max-width:60ch;">
+        Not a flat side-scroller and not top-down — a <span style="font-weight:600; color:#0f1729;">fixed 3/4
+        diorama camera</span> over a floor plane that recedes into depth. Arin walks
+        <span style="font-weight:600; color:#0f1729;">all four directions</span> (left/right across,
+        up/down into and out of the scene) through staged, miniature worlds that feel real.
+      </p>
+
+      <div class="grid grid-cols-2 gap-3" style="flex:0 0 auto;">
+        <div class="rounded-md p-4" style="background:#f6f4ee; border:1px solid #e6dec9;">
+          <p class="text-sm font-bold mb-1" style="color:#0f1729;">4-direction exploration</p>
+          <p class="text-xs leading-snug" style="color:#6b7280;">Organic walkable polygons and collision — no grid, no square tiles, no single walking line.</p>
+        </div>
+        <div class="rounded-md p-4" style="background:#f6f4ee; border:1px solid #e6dec9;">
+          <p class="text-sm font-bold mb-1" style="color:#0f1729;">Depth sorting &amp; occlusion</p>
+          <p class="text-xs leading-snug" style="color:#6b7280;">Walk behind a lantern and be covered, or in front of a tablet and cover it. Scale shifts with depth.</p>
+        </div>
+        <div class="rounded-md p-4" style="background:#f6f4ee; border:1px solid #e6dec9;">
+          <p class="text-sm font-bold mb-1" style="color:#0f1729;">Layered parallax</p>
+          <p class="text-xs leading-snug" style="color:#6b7280;">Far sky, deep architecture, midground props, walkable ground, and foreground framing drift at their own pace.</p>
+        </div>
+        <div class="rounded-md p-4" style="background:#f6f4ee; border:1px solid #e6dec9;">
+          <p class="text-sm font-bold mb-1" style="color:#0f1729;">Cinematic lighting</p>
+          <p class="text-xs leading-snug" style="color:#6b7280;">Soft bloom, fog at multiple depths, contact shadows, and a vignette / depth-of-field finish.</p>
+        </div>
+      </div>
+
+      <div class="rounded-md p-4 mt-3" style="background:#0f1729;">
+        <p class="text-sm leading-snug" style="color:#cdd5e4;">
+          <span style="color:#e9c977; font-weight:600;">A charming chibi pixel cast.</span>
+          Arin — cloak, satchel, glowing notebook — with 4-direction walk &amp; idle animations and a feet
+          shadow; distinct chibi NPCs who roam set paths; and <span style="color:#fff; font-weight:600;">Bori</span>,
+          a floating fox-spirit who trails with a slight delay, all depth-sorted into the scene.
+        </p>
+      </div>
+    </div>
+
+    <!-- Visual -->
+    <div class="sl-world-visual relative overflow-hidden" style="background:#0f1729;">
+      <img
+        src="https://api.qb-deck.quantumbyte.ai/common/image-generation?prompt=premium%20HD-2D%20pixel-art%202.5D%20diorama%20of%20a%20Korean%20fantasy%20stone%20shrine%20courtyard%20at%20dawn%2C%20fixed%203%2F4%20angled-down%20camera%2C%20a%20tiny%20chibi%20pixel%20traveler%20hero%20walking%20a%20stone%20path%20that%20recedes%20into%20depth%2C%20layered%20foreground%20lanterns%20and%20grass%20partly%20covering%20the%20hero%2C%20background%20shrine%20gate%20and%20misty%20mountains%2C%20floating%20glowing%20Hangul%20letters%2C%20soft%20bloom%20fog%20and%20long%20shadows%2C%20cinematic%20depth%2C%20not%20flat%2C%20not%20top-down"
+        alt="A chibi pixel hero walking a depth-layered 2.5D shrine diorama"
+        class="w-full h-full object-cover" style="opacity:0.95; image-rendering:pixelated;" />
+      <div class="absolute inset-0" style="background:linear-gradient(to left, rgba(15,23,41,0) 60%, rgba(15,23,41,0.35) 100%);"></div>
+      <div class="absolute bottom-0 left-0 right-0 h-20" style="background:linear-gradient(to top, rgba(15,23,41,0.55), transparent);"></div>
+    </div>
+
+  </div>
+</section>
