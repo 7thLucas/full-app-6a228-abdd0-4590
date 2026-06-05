@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { ParallaxPixelLayer } from "./ParallaxPixelLayer";
 import { LightingOverlay } from "./LightingOverlay";
-import { paintGroundPlane } from "../pixel/groundPlane";
+import { paintGround } from "../pixel/groundPlane";
 import {
   paintShrineSky,
   paintShrineMountains,
@@ -114,9 +114,9 @@ export function HD2DWorld({ world, cam, viewportW, viewportH, children, foregrou
         topFrac={Math.max(0, farScreenY / viewportH - 0.42)}
       />
 
-      {/* 4 — receding ground plane (perspective floor) */}
+      {/* 4 — receding ground plane (off-road terrain + carved road polygons) */}
       <GroundPlane
-        theme={theme}
+        world={world}
         camX={camX}
         worldW={planeW}
         screenTopY={farScreenY}
@@ -146,17 +146,19 @@ export function HD2DWorld({ world, cam, viewportW, viewportH, children, foregrou
   );
 }
 
-// Receding floor canvas: painted far→near, positioned so its top is the far
-// depth line and it slopes down to fill the lower diorama.
+// Receding floor canvas: paints off-road terrain then carves the walkable road
+// polygons, positioned so its top is the far depth line and it slopes down to
+// fill the lower diorama. The polygon world points are mapped to canvas pixels
+// so the road lands exactly under the projected entities.
 function GroundPlane({
-  theme,
+  world,
   camX,
   worldW,
   screenTopY,
   screenH,
   zIndex,
 }: {
-  theme: World2D["theme"];
+  world: World2D;
   camX: number;
   worldW: number;
   screenTopY: number;
@@ -166,15 +168,24 @@ function GroundPlane({
   const ref = useRef<HTMLCanvasElement>(null);
   const pxW = Math.ceil(worldW / SCALE);
   const pxH = Math.max(20, Math.ceil(screenH / SCALE));
+  const { theme, walkable, road, depthNear } = world;
 
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, pxW, pxH);
-    paintGroundPlane(ctx, pxW, pxH, theme);
-  }, [theme, pxW, pxH]);
+    // world → canvas-pixel mapper.
+    //   canvas x   = worldX / SCALE
+    //   canvas y   = (worldY - depthNear) * DEPTH_SCALE / SCALE
+    // (the canvas top edge sits at depthNear's screen line in HD2DWorld).
+    const toPx = (wx: number, wy: number) => ({
+      x: wx / SCALE,
+      y: ((wy - depthNear) * DEPTH_SCALE) / SCALE,
+    });
+    const seed = theme === "shrine" ? 11 : theme === "village" ? 22 : 33;
+    paintGround({ ctx, pxW, pxH, road, walkable, toPx, seed });
+  }, [theme, walkable, road, depthNear, pxW, pxH]);
 
   return (
     <canvas

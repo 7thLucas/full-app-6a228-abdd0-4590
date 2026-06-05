@@ -1,52 +1,28 @@
 // ───────────────────────────────────────────────────────────────────────────
-// Receding ground-plane painter for the 2.5D diorama. Draws an organic pixel
-// floor that gets DARKER + denser toward the front (near camera) and lighter /
-// hazier toward the back (depth), with a soft perspective curve and NO grid.
-// The plane is painted once per area into an offscreen canvas the size of the
-// world floor, then positioned by HD2DWorld.
+// Receding ground-plane painter for the 2.5D diorama.
+//
+// CRITICAL: the floor is NOT a uniform mat. It paints OFF-ROAD terrain (grass /
+// dark field) across the whole world, then CARVES the hand-authored walkable
+// road polygons on top as a lit stone/cobble surface with curb edges. This is
+// what makes the road visibly guide the player — off-road reads as terrain you
+// cannot walk on, with no debug outlines.
+//
+// The canvas is world-sized: pixel x = worldX / SCALE, and pixel y maps depth
+// depthNear (top) → depthFar (bottom) compressed by DEPTH_SCALE. The painter is
+// handed a mapper so polygon world points land exactly under the projected
+// entities.
 // ───────────────────────────────────────────────────────────────────────────
 
 import { rng } from "./pixelArt";
-import type { AreaTheme } from "../../data/gameData";
+import type { Polygon } from "../../engine/projection";
+import type { RoadStyle } from "../../data/world2d";
 
 type Ctx = CanvasRenderingContext2D;
 
-interface Palette {
-  far: string;
-  mid: string;
-  near: string;
-  speck1: string;
-  speck2: string;
-  edge: string; // subtle path-edge tint
+function hex(h: string): [number, number, number] {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
-
-const THEMES: Record<AreaTheme, Palette> = {
-  shrine: {
-    far: "#7d8aa2",
-    mid: "#8f8466",
-    near: "#6a5c42",
-    speck1: "#9a8a64",
-    speck2: "#574a36",
-    edge: "#b9c6e0",
-  },
-  village: {
-    far: "#7a7268",
-    mid: "#6b5c48",
-    near: "#4a3d2c",
-    speck1: "#7a6a4e",
-    speck2: "#3a3022",
-    edge: "#d8b25a",
-  },
-  gate: {
-    far: "#2c2548",
-    mid: "#211a38",
-    near: "#140e26",
-    speck1: "#352a58",
-    speck2: "#0d0820",
-    edge: "#7a5ad0",
-  },
-};
-
 function lerpColor(a: string, b: string, t: number): string {
   const pa = hex(a);
   const pb = hex(b);
@@ -55,54 +31,100 @@ function lerpColor(a: string, b: string, t: number): string {
   const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
   return `rgb(${r},${g},${bl})`;
 }
-function hex(h: string): [number, number, number] {
-  const n = parseInt(h.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+
+export interface GroundPaintArgs {
+  ctx: Ctx;
+  /** canvas pixel size. */
+  pxW: number;
+  pxH: number;
+  road: RoadStyle;
+  walkable: Polygon[];
+  /** maps a world point to canvas pixel coords. */
+  toPx: (worldX: number, worldY: number) => { x: number; y: number };
+  seed: number;
 }
 
-// Paint a w×h floor where y=0 is the FAR edge (depth) and y=h is the NEAR edge.
-export function paintGroundPlane(ctx: Ctx, w: number, h: number, theme: AreaTheme) {
-  const pal = THEMES[theme];
-  const r = rng(theme === "shrine" ? 11 : theme === "village" ? 22 : 33);
+// Build a Path2D from a walkable polygon in canvas pixel space.
+function polyPath(poly: Polygon, toPx: GroundPaintArgs["toPx"]): Path2D {
+  const p = new Path2D();
+  poly.forEach((pt, i) => {
+    const c = toPx(pt.x, pt.y);
+    if (i === 0) p.moveTo(c.x, c.y);
+    else p.lineTo(c.x, c.y);
+  });
+  p.closePath();
+  return p;
+}
 
-  // vertical gradient far→near, banded for a pixel look
-  const bands = Math.max(8, Math.floor(h / 6));
+export function paintGround(args: GroundPaintArgs) {
+  const { ctx, pxW, pxH, road, walkable, toPx, seed } = args;
+  const r = rng(seed);
+  ctx.clearRect(0, 0, pxW, pxH);
+
+  // ── 1. OFF-ROAD terrain across the whole plane (far→near banded) ──────────
+  const bands = Math.max(10, Math.floor(pxH / 5));
   for (let i = 0; i < bands; i++) {
-    const t0 = i / bands;
-    const y0 = Math.floor(t0 * h);
-    const y1 = Math.floor(((i + 1) / bands) * h);
-    const col = t0 < 0.5 ? lerpColor(pal.far, pal.mid, t0 * 2) : lerpColor(pal.mid, pal.near, (t0 - 0.5) * 2);
-    ctx.fillStyle = col;
-    ctx.fillRect(0, y0, w, y1 - y0);
+    const t = i / bands; // 0 far .. 1 near
+    const y0 = Math.floor(t * pxH);
+    const y1 = Math.floor(((i + 1) / bands) * pxH);
+    ctx.fillStyle = lerpColor(road.offBase, road.offShade, 0.25 + t * 0.55);
+    ctx.fillRect(0, y0, pxW, y1 - y0);
+  }
+  // off-road speckle (grass tufts / texture)
+  const offCount = Math.floor(pxW * pxH * 0.02);
+  for (let i = 0; i < offCount; i++) {
+    const x = Math.floor(r() * pxW);
+    const y = Math.floor(r() * pxH);
+    const depthT = y / pxH;
+    if (r() > 0.35 + depthT * 0.4) continue;
+    ctx.fillStyle = r() > 0.5 ? road.offBase : road.offShade;
+    ctx.fillRect(x, y, depthT > 0.65 ? 2 : 1, depthT > 0.65 ? 2 : 1);
   }
 
-  // organic speckle — denser + bigger toward the near edge (fakes detail falloff)
-  const count = Math.floor(w * h * 0.012);
-  for (let i = 0; i < count; i++) {
-    const x = Math.floor(r() * w);
-    const y = Math.floor(r() * h);
-    const depthT = y / h; // 0 far .. 1 near
-    if (r() > 0.25 + depthT * 0.5) continue;
-    const sz = depthT > 0.6 ? 2 : 1;
-    ctx.fillStyle = r() > 0.5 ? pal.speck1 : pal.speck2;
-    ctx.fillRect(x, y, sz, sz);
-  }
+  // ── 2. CARVE the road polygons ────────────────────────────────────────────
+  for (const poly of walkable) {
+    const path = polyPath(poly, toPx);
 
-  // soft curved path-edge highlights that converge toward the back (perspective)
-  ctx.globalAlpha = 0.22;
-  for (let side = 0; side < 2; side++) {
-    for (let y = 0; y < h; y++) {
-      const depthT = y / h;
-      // edges spread apart near camera, converge far → fake vanishing point
-      const spread = 0.16 + depthT * 0.30;
-      const ex = side === 0 ? w * (0.5 - spread) : w * (0.5 + spread);
-      ctx.fillStyle = pal.edge;
-      ctx.fillRect(Math.round(ex), y, 2, 1);
+    // soft curb glow just outside the road for a lit-edge read
+    ctx.save();
+    ctx.clip(path);
+    // road base gradient: lighter (hazier) far, warmer/darker near
+    for (let i = 0; i < bands; i++) {
+      const t = i / bands;
+      const y0 = Math.floor(t * pxH);
+      const y1 = Math.floor(((i + 1) / bands) * pxH);
+      ctx.fillStyle = lerpColor(road.roadFar, road.roadNear, t);
+      ctx.fillRect(0, y0, pxW, y1 - y0);
     }
-  }
-  ctx.globalAlpha = 1;
+    // cobble speckle on the road, denser near camera
+    const roadCount = Math.floor(pxW * pxH * 0.03);
+    for (let i = 0; i < roadCount; i++) {
+      const x = Math.floor(r() * pxW);
+      const y = Math.floor(r() * pxH);
+      const depthT = y / pxH;
+      if (r() > 0.3 + depthT * 0.5) continue;
+      const sz = depthT > 0.6 ? 2 : 1;
+      ctx.fillStyle = r() > 0.55 ? road.speck : road.curb;
+      ctx.globalAlpha = r() > 0.5 ? 0.5 : 0.28;
+      ctx.fillRect(x, y, sz, sz);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
 
-  // near-edge shadow lip (grounds the front of the diorama)
-  ctx.fillStyle = "rgba(0,0,0,0.28)";
-  ctx.fillRect(0, Math.floor(h * 0.92), w, Math.ceil(h * 0.08));
+    // curb edge stroke (the natural road border)
+    ctx.strokeStyle = road.curb;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 2;
+    ctx.stroke(path);
+    // inner darker lip for depth
+    ctx.strokeStyle = road.speck;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 1;
+    ctx.stroke(path);
+    ctx.globalAlpha = 1;
+  }
+
+  // ── 3. near-edge shadow lip grounds the front of the diorama ──────────────
+  ctx.fillStyle = "rgba(0,0,0,0.30)";
+  ctx.fillRect(0, Math.floor(pxH * 0.93), pxW, Math.ceil(pxH * 0.07));
 }
