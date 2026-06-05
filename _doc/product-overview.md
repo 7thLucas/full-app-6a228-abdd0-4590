@@ -77,8 +77,10 @@ Victory grants XP and a level-up, and the prototype ends on a hook toward the ne
 
 ## Feature scope (must-have playable features)
 Letter Shrine Hangul lessons (Chapter 0) · Dawn Village exploration + NPC greeting dialogue
-(Chapter 1) · HD-2D side-view diorama scenes · dialogue system (speaker, portrait,
-typewriter, Korean answer choices) · learning-driven turn-based battle vs the Silence Wisp ·
+(Chapter 1) · Silent Gate approach (Chapter 1 finale) · HD-2D 2.5D diorama scenes with
+4-direction movement, depth sorting, foreground occlusion & parallax · dialogue system
+(speaker, portrait, typewriter, Korean answer choices) · learning-driven turn-based battle
+vs the Silence Wisp ·
 Meaning Break + Fluency Combo mechanics · Wordbook of learned content · Memory Flame daily
 streak · XP/level progression · **save/load** so a returning learner resumes where they
 left off.
