@@ -66,6 +66,14 @@ async function startServer() {
           interval: 100,
         },
       },
+      // Pre-bundle commonly-used client deps at startup so Vite does not
+      // discover + re-optimize them on the first proxied request. A mid-flight
+      // re-optimization forces an optimizer teardown/reload that drops in-flight
+      // connections ("Server disconnected without sending a response"), which
+      // makes the public preview host verification time out.
+      optimizeDeps: {
+        include: ["next-themes", "lucide-react", "clsx", "tailwind-merge"],
+      },
     });
     app.use(viteDevServer.middlewares);
     app.all("*", async (req, res, next) => {

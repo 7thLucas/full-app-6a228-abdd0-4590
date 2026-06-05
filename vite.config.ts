@@ -34,6 +34,9 @@ export default defineConfig({
       clientPort: 443,
     },
   },
+  optimizeDeps: {
+    include: ["next-themes", "lucide-react", "clsx", "tailwind-merge"],
+  },
   plugins: [
     devtoolsJson(),
     reactRouter(),
