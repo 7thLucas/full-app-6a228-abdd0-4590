@@ -119,8 +119,9 @@ correct/incorrect answers, dialogue advance, Meaning Break, combo build, and lev
 possible. Optional pronunciation cues for letters/greetings as placeholder labels.
 
 **Art:** original placeholder pixel-style sprites built from CSS / SVG / canvas shapes
-(e.g. the learner-avatar; friendly Dawn Village NPCs; the Silence Wisp as a hushed,
-shadowy spirit). Composition stays polished even with placeholder art.
+(e.g. Arin the traveler-avatar; Bori the glowing fox-spirit companion; friendly Dawn Village
+NPCs; the Silence Wisp as a hushed, shadowy spirit). Composition stays polished even with
+placeholder art.
 
 ## Technology & platform
 - **React + TypeScript** frontend, runs directly in the browser.
