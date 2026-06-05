@@ -1,0 +1,51 @@
+<style>
+  .mode-landscape .sl-found { flex-direction: row; }
+  .mode-portrait  .sl-found { flex-direction: column; }
+  .mode-portrait  .sl-found-visual { width:100%; height:30%; }
+  .mode-landscape .sl-found-visual { width:38%; height:100%; }
+</style>
+
+<section class="w-full h-full overflow-auto bg-white">
+  <div class="sl-found flex w-full h-full">
+
+    <!-- Narrative -->
+    <div class="flex flex-col justify-center p-12" style="flex:1; min-width:0;">
+      <span class="text-sm tracking-[0.3em] font-semibold uppercase mb-8" style="color:#b8862f;">The Foundation</span>
+
+      <div class="grid grid-cols-1 gap-6">
+        <!-- Problem -->
+        <div class="rounded-lg p-6" style="background:#f6f4ee; border-left:4px solid #c9a44c;">
+          <h2 class="text-xl font-serif font-bold mb-2" style="color:#0f1729;">The challenge</h2>
+          <p class="text-base leading-relaxed" style="color:#3f4658;">
+            HD-2D turn-based fantasy RPGs are beloved — but their feel lives in polished, premium
+            games, not the browser. A pitch deck or static mockup can't prove that atmosphere,
+            story, and tactical combat actually come together. And any homage risks crossing into
+            copyrighted characters, music, and UI.
+          </p>
+        </div>
+
+        <!-- Solution -->
+        <div class="rounded-lg p-6" style="background:#0f1729;">
+          <h2 class="text-xl font-serif font-bold mb-2" style="color:#e9c977;">The slice we built</h2>
+          <p class="text-base leading-relaxed" style="color:#cdd5e4;">
+            A <span style="color:#ffffff; font-weight:600;">playable vertical slice</span> that runs
+            directly in the browser: an entirely original world — Asterra, the Hollow Sun, eight
+            travelers — with real exploration, dialogue, towns, and turn-based combat. Genre homage,
+            never a clone. One fully realized path (Kael, Chapter 1) on a data-driven foundation built
+            to scale to all eight roads.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visual -->
+    <div class="sl-found-visual relative overflow-hidden" style="background:#0f1729;">
+      <img
+        src="https://api.qb-deck.quantumbyte.ai/common/image-generation?prompt=candle-lit%20abandoned%20mountain%20chapel%20interior%2C%20broken%20stained%20glass%2C%20snow%20drifting%20through%20cracked%20stone%20walls%2C%20warm%20lantern%20glow%20against%20cold%20blue%20light%2C%20pixel-art%20HD-2D%20diorama%2C%20atmospheric%20fog%20and%20dust%20motes%2C%20cinematic"
+        alt="Candlelit chapel interior"
+        class="w-full h-full object-cover" style="opacity:0.95;" />
+      <div class="absolute inset-0" style="background:linear-gradient(to left, rgba(15,23,41,0) 60%, rgba(15,23,41,0.35) 100%);"></div>
+    </div>
+
+  </div>
+</section>
