@@ -451,6 +451,7 @@ function ScreenRouter({ vpW, vpH }: { vpW: number; vpH: number }) {
           key={`${overlay.enemyId}-${overlay.interactableId}`}
           enemyId={overlay.enemyId}
           isBoss={overlay.isBoss}
+          battleTheme={getMap(game.state.world.area).theme}
           onEnd={(result, hp, sp) =>
             handleBattleEnd(result, hp, sp, {
               enemyId: overlay.enemyId,

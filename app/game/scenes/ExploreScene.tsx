@@ -1,11 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MapDef, MapInteractable } from "../data/types";
 import { getMap, SHRINE_GATE } from "../data/maps";
 import { useGame } from "../engine/store";
 import { useInput, type ActionKey } from "../engine/useInput";
-import { WorldTiles } from "./WorldTiles";
 import { Sprite, type SpriteKind } from "../visual/Sprite";
+import { PixelCharacter } from "../visual/PixelCharacter";
+import { Diorama } from "../visual/Diorama";
 import { Atmosphere } from "../visual/Atmosphere";
+import {
+  sceneLayout,
+  projectPixel,
+  projectTile,
+  cameraFor,
+  corridorAxis,
+  type SceneLayout,
+} from "../visual/hd2d";
 import { sfx } from "../engine/sfx";
 
 const SPEED = 4.2; // px per frame at base
@@ -20,8 +29,14 @@ interface ExploreSceneProps {
   shakeKey: number;
 }
 
-// Pixel-space player position lives in a ref; the loop writes it back to the
-// store on transitions. Camera follows with easing.
+// ─────────────────────────────────────────────────────────────────────────────
+// HD-2D SIDE-VIEW EXPLORE
+// The gameplay engine (collision grid, interactable tile coords, quest/door
+// triggers) is unchanged — the player still lives in pixel space over the tile
+// grid. We REMAP input (A/D -> horizontal tile-x, W/S -> depth tile-y) and
+// PROJECT every world position into a cinematic side-view diorama. No top-down
+// camera, no grid, no tiny icons.
+// ─────────────────────────────────────────────────────────────────────────────
 export function ExploreScene({
   viewportW,
   viewportH,
@@ -34,12 +49,18 @@ export function ExploreScene({
   const map = getMap(game.state.world.area);
   const ts = map.tileSize;
 
+  const layout = useMemo<SceneLayout>(() => sceneLayout(map, viewportW), [map.id, viewportW]);
+
   const posRef = useRef({
     x: game.state.world.x * ts + ts / 2,
     y: game.state.world.y * ts + ts / 2,
   });
-  const facingRef = useRef(game.state.world.facing);
-  const camRef = useRef({ x: 0, y: 0 });
+  // Facing in the side-view is only left/right.
+  const facingRef = useRef<"left" | "right">(
+    game.state.world.facing === "left" ? "left" : "right",
+  );
+  const movingRef = useRef(false);
+  const camRef = useRef(0);
   const rafRef = useRef<number>(0);
   const lastAreaRef = useRef(map.id);
 
@@ -55,7 +76,10 @@ export function ExploreScene({
       x: game.state.world.x * ts + ts / 2,
       y: game.state.world.y * ts + ts / 2,
     };
-    facingRef.current = game.state.world.facing;
+    facingRef.current = game.state.world.facing === "left" ? "left" : "right";
+    // snap camera to player so the new area doesn't slide in jarringly
+    const p = projectPixel(map, layout, posRef.current.x, posRef.current.y);
+    camRef.current = cameraFor(p.worldX, layout.worldWidth, viewportW);
     onEnterArea(map);
   }, [map.id]);
 
@@ -63,7 +87,6 @@ export function ExploreScene({
     (tileX: number, tileY: number): boolean => {
       if (tileX < 0 || tileY < 0 || tileX >= map.width || tileY >= map.height) return true;
       if (map.collision[tileY][tileX] === 1) return true;
-      // shrine gate: blocked until lever flag set
       if (
         map.theme === "shrine" &&
         tileY === SHRINE_GATE.row &&
@@ -72,7 +95,6 @@ export function ExploreScene({
       ) {
         return true;
       }
-      // solid interactables (props/NPCs block movement)
       const solid = activeInteractables(map, game.state.flags).find(
         (it) =>
           it.x === tileX &&
@@ -92,15 +114,16 @@ export function ExploreScene({
     const px = Math.floor(posRef.current.x / ts);
     const py = Math.floor(posRef.current.y / ts);
     const items = activeInteractables(map, game.state.flags);
-    // check current tile + the tile being faced + 4-neighbours
-    const candidates = [
-      { x: px, y: py },
-      facingOffset(px, py, facingRef.current),
-      { x: px, y: py - 1 },
-      { x: px, y: py + 1 },
-      { x: px - 1, y: py },
-      { x: px + 1, y: py },
-    ];
+    // Check the current tile and all 8 neighbours — interactables sit close on
+    // the lane, and corridor orientation differs per map, so a full ring is the
+    // most forgiving for the player.
+    const candidates: { x: number; y: number }[] = [{ x: px, y: py }];
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        if (ox === 0 && oy === 0) continue;
+        candidates.push({ x: px + ox, y: py + oy });
+      }
+    }
     for (const c of candidates) {
       const hit = items.find((it) => it.x === c.x && it.y === c.y);
       if (hit) return hit;
@@ -116,7 +139,6 @@ export function ExploreScene({
         const hit = findNearby();
         if (hit) {
           sfx("select");
-          // sync store tile before handing off
           const px = Math.floor(posRef.current.x / ts);
           const py = Math.floor(posRef.current.y / ts);
           game.setPlayerTile(px, py, facingRef.current);
@@ -146,22 +168,40 @@ export function ExploreScene({
       if (!running) return;
       if (!paused) {
         const inp = input.current;
-        const dx = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
-        const dy = (inp.down ? 1 : 0) - (inp.up ? 1 : 0);
+        // SIDE-VIEW MAPPING (corridor-axis aware):
+        //   A/D (left/right) -> travel ALONG the corridor
+        //   W/S (up/down)    -> shallow DEPTH move (into/out of the scene)
+        // For tall maps the corridor runs along tile-Y, so A/D drives Y and W/S
+        // drives X. For wide maps it's the reverse. Facing is always horizontal.
+        const along = (inp.right ? 1 : 0) - (inp.left ? 1 : 0); // +1 = forward
+        const depth = (inp.down ? 1 : 0) - (inp.up ? 1 : 0); // +1 = toward camera
 
-        if (dx !== 0 || dy !== 0) {
-          // facing
-          if (Math.abs(dx) >= Math.abs(dy)) {
-            facingRef.current = dx > 0 ? "right" : "left";
-          } else {
-            facingRef.current = dy > 0 ? "down" : "up";
-          }
+        movingRef.current = along !== 0 || depth !== 0;
+
+        if (along !== 0 || depth !== 0) {
+          if (along > 0) facingRef.current = "right";
+          else if (along < 0) facingRef.current = "left";
+
+          const axis = corridorAxis(map);
           const speed = SPEED * (inp.dash ? DASH_MULT : 1);
-          const len = Math.hypot(dx, dy) || 1;
-          const nx = posRef.current.x + (dx / len) * speed;
-          const ny = posRef.current.y + (dy / len) * speed;
+          const depthSpeed = speed * 0.7;
 
-          // collision check per-axis using player half-size
+          // dTileX / dTileY in pixel space depending on corridor orientation.
+          let dPxX: number;
+          let dPxY: number;
+          if (axis === "y") {
+            // along -> +tileY (forward = down the rows); depth -> +tileX
+            dPxX = depth * depthSpeed;
+            dPxY = along * speed;
+          } else {
+            // along -> +tileX; depth -> +tileY (toward camera = +y)
+            dPxX = along * speed;
+            dPxY = depth * depthSpeed;
+          }
+
+          const nx = posRef.current.x + dPxX;
+          const ny = posRef.current.y + dPxY;
+
           const half = ts * 0.32;
           if (!collides(nx, posRef.current.y, half, isBlocked, ts)) {
             posRef.current.x = nx;
@@ -172,21 +212,11 @@ export function ExploreScene({
           handleStepTriggers();
         }
 
-        // camera easing
-        const targetCamX = clamp(
-          posRef.current.x - viewportW / 2,
-          0,
-          Math.max(0, map.width * ts - viewportW),
-        );
-        const targetCamY = clamp(
-          posRef.current.y - viewportH / 2,
-          0,
-          Math.max(0, map.height * ts - viewportH),
-        );
-        camRef.current.x += (targetCamX - camRef.current.x) * 0.12;
-        camRef.current.y += (targetCamY - camRef.current.y) * 0.12;
+        // camera: horizontal pan following the projected player worldX
+        const proj = projectPixel(map, layout, posRef.current.x, posRef.current.y);
+        const targetCam = cameraFor(proj.worldX, layout.worldWidth, viewportW);
+        camRef.current += (targetCam - camRef.current) * 0.12;
 
-        // nearby indicator
         const n = findNearby();
         setNearby((prev) => (prev?.id === n?.id ? prev : n));
 
@@ -199,17 +229,20 @@ export function ExploreScene({
       running = false;
       cancelAnimationFrame(rafRef.current);
     };
-  }, [map.id, paused, viewportW, viewportH]);
+  }, [map.id, paused, viewportW, viewportH, layout]);
 
-  const cam = camRef.current;
-  const worldStyle: React.CSSProperties = {
+  const camX = camRef.current;
+  const items = activeInteractables(map, game.state.flags);
+
+  const playerProj = projectPixel(map, layout, posRef.current.x, posRef.current.y);
+
+  // Stage container is translated by camera; actors live in stage space.
+  const stageStyle: React.CSSProperties = {
     position: "absolute",
-    left: -cam.x,
-    top: -cam.y,
+    inset: 0,
+    transform: `translate3d(${-camX}px,0,0)`,
     willChange: "transform",
   };
-
-  const items = activeInteractables(map, game.state.flags);
 
   return (
     <div
@@ -217,36 +250,49 @@ export function ExploreScene({
       key={`shake-${shakeKey}`}
       style={{ position: "absolute", inset: 0, overflow: "hidden" }}
     >
-      {/* Parallax backdrop for snow/shrine */}
-      {(map.theme === "snow" || map.theme === "shrine") && (
-        <ParallaxBack theme={map.theme} camX={cam.x} camY={cam.y} />
-      )}
+      {/* 5-layer diorama backdrop (handles its own internal parallax) */}
+      <Diorama
+        map={map}
+        camX={camX}
+        worldWidth={layout.worldWidth}
+        viewportW={viewportW}
+        viewportH={viewportH}
+        laneBottomFrac={layout.laneTopY}
+      />
 
-      <div style={worldStyle}>
-        <WorldTiles map={map} />
-
-        {/* interactables */}
-        {items.map((it) => (
-          <Interactable key={it.id} it={it} ts={ts} highlight={nearby?.id === it.id} />
-        ))}
+      {/* MIDGROUND: interactables + player, depth-sorted, projected to side-view */}
+      <div style={stageStyle}>
+        {items.map((it) => {
+          const p = projectTile(map, layout, it.x, it.y);
+          return (
+            <InteractableActor
+              key={it.id}
+              it={it}
+              worldX={p.worldX}
+              screenYFrac={p.screenYFrac}
+              viewportH={viewportH}
+              scale={p.scale}
+              z={15 + Math.round((1 - p.depth) * 60)}
+              highlight={nearby?.id === it.id}
+            />
+          );
+        })}
 
         {/* player */}
-        <div
-          style={{
-            position: "absolute",
-            left: posRef.current.x - ts / 2,
-            top: posRef.current.y - ts * 0.85,
-            width: ts,
-            height: ts,
-            zIndex: Math.floor(posRef.current.y),
-          }}
-        >
-          <div className="coer-breathe">
-            <Sprite kind="kael" size={ts} facing={facingRef.current} />
-          </div>
-        </div>
+        <PixelCharacter
+          kind="kael"
+          baseSize={ts * 2.1}
+          worldX={playerProj.worldX}
+          screenYFrac={playerProj.screenYFrac}
+          viewportH={viewportH}
+          scale={playerProj.scale}
+          facing={facingRef.current}
+          moving={movingRef.current && !paused}
+          z={16 + Math.round((1 - playerProj.depth) * 60)}
+        />
       </div>
 
+      {/* particles / fog over everything but UI */}
       <Atmosphere theme={map.theme} />
 
       {/* interaction prompt */}
@@ -255,13 +301,13 @@ export function ExploreScene({
           className="coer-fade-in"
           style={{
             position: "absolute",
-            bottom: 14,
+            bottom: 70,
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 40,
           }}
         >
-          <div className="px-3 py-1.5 rounded border border-[rgba(216,178,90,0.5)] bg-black/70 text-xs text-[#e9cf86] flex items-center gap-2">
+          <div className="px-3 py-1.5 rounded border border-[rgba(216,178,90,0.5)] bg-black/70 text-xs text-[#e9cf86] flex items-center gap-2 shadow-[0_0_18px_rgba(216,178,90,0.2)]">
             <kbd className="px-1.5 py-0.5 rounded border border-[rgba(216,178,90,0.4)] bg-black/50 font-mono text-[10px]">
               E
             </kbd>
@@ -300,25 +346,6 @@ function collides(
   return corners.some(([x, y]) => isBlocked(Math.floor(x / ts), Math.floor(y / ts)));
 }
 
-function clamp(v: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, v));
-}
-
-function facingOffset(x: number, y: number, facing: string) {
-  switch (facing) {
-    case "up":
-      return { x, y: y - 1 };
-    case "down":
-      return { x, y: y + 1 };
-    case "left":
-      return { x: x - 1, y };
-    case "right":
-      return { x: x + 1, y };
-    default:
-      return { x, y };
-  }
-}
-
 function promptVerb(it: MapInteractable): string {
   switch (it.kind) {
     case "npc":
@@ -338,98 +365,51 @@ function promptVerb(it: MapInteractable): string {
   }
 }
 
-function Interactable({
+// An interactable rendered as an upright side-view prop/NPC/enemy on the lane.
+function InteractableActor({
   it,
-  ts,
+  worldX,
+  screenYFrac,
+  viewportH,
+  scale,
+  z,
   highlight,
 }: {
   it: MapInteractable;
-  ts: number;
+  worldX: number;
+  screenYFrac: number;
+  viewportH: number;
+  scale: number;
+  z: number;
   highlight: boolean;
 }) {
   const kind = (it.sprite ?? "door") as SpriteKind;
-  const bob =
-    it.kind === "save" || it.kind === "npc" || it.kind === "shop" ? "coer-bob" : "";
-  const glow = it.kind === "save" ? "coer-pulse-glow" : "";
+  const isCharacter = it.kind === "npc" || it.kind === "shop";
+  const isEnemyPreview = it.kind === "encounter" || it.kind === "boss";
+  const glow = it.kind === "save";
+  const bob = it.kind === "save" || isCharacter;
+
+  // characters face the player roughly (face left, toward centre-left spawn)
+  const facing = isCharacter ? "left" : "right";
+  const baseSize = isEnemyPreview ? 120 : 96;
+
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: it.x * ts,
-        top: it.y * ts - ts * 0.4,
-        width: ts,
-        height: ts * 1.4,
-        zIndex: Math.floor(it.y * ts),
-      }}
-    >
-      {highlight && (
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: -8,
-            transform: "translateX(-50%)",
-            width: ts * 0.5,
-            height: 4,
-            borderRadius: 4,
-            background: "radial-gradient(circle, rgba(233,207,134,0.9), transparent)",
-          }}
-          className="coer-blink"
-        />
-      )}
-      <div className={`${bob} ${glow}`} style={{ position: "absolute", bottom: 0 }}>
-        <Sprite kind={kind} size={ts} />
-      </div>
-    </div>
+    <PixelCharacter
+      kind={kind}
+      baseSize={baseSize}
+      worldX={worldX}
+      screenYFrac={screenYFrac}
+      viewportH={viewportH}
+      scale={scale}
+      facing={facing as "left" | "right"}
+      moving={false}
+      bob={bob}
+      glow={glow}
+      z={z}
+      highlight={highlight}
+    />
   );
 }
 
-function ParallaxBack({
-  theme,
-  camX,
-  camY,
-}: {
-  theme: "snow" | "shrine";
-  camX: number;
-  camY: number;
-}) {
-  const far = theme === "snow"
-    ? "linear-gradient(180deg, #7d93ad 0%, #9fb2c7 45%, #c4d2e0 100%)"
-    : "linear-gradient(180deg, #0a1424 0%, #112038 55%, #16263f 100%)";
-  return (
-    <div style={{ position: "absolute", inset: 0, overflow: "hidden", zIndex: 0 }}>
-      <div style={{ position: "absolute", inset: 0, background: far }} />
-      {/* distant mountains */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 0,
-          left: -camX * 0.15,
-          width: "200%",
-          height: "60%",
-          background:
-            theme === "snow"
-              ? "radial-gradient(ellipse 30% 100% at 20% 100%, #6f86a0 0%, transparent 70%), radial-gradient(ellipse 35% 100% at 55% 100%, #5e768f 0%, transparent 72%), radial-gradient(ellipse 28% 100% at 85% 100%, #748aa3 0%, transparent 70%)"
-              : "radial-gradient(ellipse 32% 100% at 30% 100%, #15263d 0%, transparent 70%), radial-gradient(ellipse 30% 100% at 70% 100%, #1a2e4a 0%, transparent 72%)",
-          opacity: theme === "snow" ? 0.85 : 0.5,
-          transform: `translateY(${camY * 0.05}px)`,
-        }}
-      />
-      {/* mid ridge */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 0,
-          left: -camX * 0.3,
-          width: "200%",
-          height: "40%",
-          background:
-            theme === "snow"
-              ? "radial-gradient(ellipse 25% 100% at 30% 100%, #8ba0b8 0%, transparent 70%), radial-gradient(ellipse 30% 100% at 70% 100%, #93a8bf 0%, transparent 72%)"
-              : "radial-gradient(ellipse 25% 100% at 40% 100%, #1c3350 0%, transparent 70%)",
-          opacity: 0.7,
-        }}
-      />
-    </div>
-  );
-}
+// keep Sprite import used (InteractableActor relies on SpriteKind typing)
+void Sprite;

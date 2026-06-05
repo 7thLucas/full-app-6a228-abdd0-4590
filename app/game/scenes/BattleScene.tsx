@@ -18,6 +18,7 @@ import {
   type EnemyRuntime,
 } from "../engine/combat";
 import { Sprite } from "../visual/Sprite";
+import { Atmosphere } from "../visual/Atmosphere";
 import { Panel, Heading, StatBar, GoldButton } from "../ui/primitives";
 import { sfx } from "../engine/sfx";
 import { ELEMENT_META } from "../data/elements";
@@ -36,9 +37,46 @@ interface BattleSceneProps {
   enemyId: string;
   isBoss: boolean;
   onEnd: (result: "victory" | "defeat" | "flee", playerHp: number, playerSp: number) => void;
+  battleTheme?: "chapel" | "snow" | "town" | "shrine";
 }
 
-export function BattleScene({ enemyId, isBoss, onEnd }: BattleSceneProps) {
+// Cinematic side-view battle backdrop derived from the area theme.
+function battleStageStyle(
+  theme: "chapel" | "snow" | "town" | "shrine",
+  isBoss: boolean,
+): React.CSSProperties {
+  if (isBoss) {
+    return {
+      background:
+        "radial-gradient(ellipse at 50% 30%,#2a1840 0%,#160c28 55%,#070310 100%)",
+    };
+  }
+  switch (theme) {
+    case "snow":
+      return {
+        background:
+          "linear-gradient(180deg,#1a2740 0%,#3a4f6e 40%,#6b88a8 72%,#9fb4cb 100%)",
+      };
+    case "town":
+      return {
+        background:
+          "linear-gradient(180deg,#10182b 0%,#1b2740 45%,#33415c 80%,#475a78 100%)",
+      };
+    case "chapel":
+      return {
+        background:
+          "linear-gradient(180deg,#0a1322 0%,#101b30 40%,#241a12 78%,#100b07 100%)",
+      };
+    case "shrine":
+    default:
+      return {
+        background:
+          "radial-gradient(ellipse at 50% 32%,#13243c 0%,#0c1828 55%,#060c16 100%)",
+      };
+  }
+}
+
+export function BattleScene({ enemyId, isBoss, onEnd, battleTheme = "snow" }: BattleSceneProps) {
   const game = useGame();
   const player = game.state.player;
   const eff = effectiveStats(player);
@@ -71,6 +109,8 @@ export function BattleScene({ enemyId, isBoss, onEnd }: BattleSceneProps) {
   const [shatterFx, setShatterFx] = useState(0);
   const [enemyHurt, setEnemyHurt] = useState(false);
   const [playerHurt, setPlayerHurt] = useState(false);
+  const [slashFx, setSlashFx] = useState(0);
+  const [playerLunge, setPlayerLunge] = useState(false);
   const [ended, setEnded] = useState<"victory" | "defeat" | "flee" | null>(null);
   const [busy, setBusy] = useState(false);
   const floatId = useRef(0);
@@ -106,6 +146,9 @@ export function BattleScene({ enemyId, isBoss, onEnd }: BattleSceneProps) {
       setEnemyHurt(true);
       setTimeout(() => setEnemyHurt(false), 220);
       setShake((s) => s + 1);
+      setSlashFx((s) => s + 1);
+      setPlayerLunge(true);
+      setTimeout(() => setPlayerLunge(false), 260);
       addFloat({
         id: 0,
         text: `${res.damage}${res.crit ? "!" : ""}`,
@@ -347,16 +390,59 @@ export function BattleScene({ enemyId, isBoss, onEnd }: BattleSceneProps) {
       className={shake ? "coer-shake" : undefined}
       key={`battle-shake-${shake}`}
     >
-      {/* battle backdrop */}
+      {/* cinematic side-view battle backdrop (area-derived) */}
+      <div style={{ position: "absolute", inset: 0, ...battleStageStyle(battleTheme, isBoss) }} />
+      {/* atmospheric depth: far silhouettes */}
       <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: "30%",
+          height: "26%",
+          background:
+            "radial-gradient(ellipse 20% 100% at 20% 100%,rgba(0,0,0,0.4) 0,transparent 70%),radial-gradient(ellipse 24% 100% at 60% 100%,rgba(0,0,0,0.35) 0,transparent 72%),radial-gradient(ellipse 18% 100% at 85% 100%,rgba(0,0,0,0.4) 0,transparent 70%)",
+          opacity: 0.6,
+        }}
+      />
+      {/* battle ground platform (side-view stage) */}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: "32%",
+          background:
+            "linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.75))",
+          boxShadow: "inset 0 30px 60px rgba(0,0,0,0.5)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: "32%",
+          height: 2,
+          background: "rgba(216,178,90,0.12)",
+        }}
+      />
+      {/* entry flash */}
+      <div
+        className="coer-battle-flash"
         style={{
           position: "absolute",
           inset: 0,
           background: isBoss
-            ? "radial-gradient(ellipse at 50% 35%, #2a1840 0%, #120a22 60%, #05030c 100%)"
-            : "radial-gradient(ellipse at 50% 40%, #16243a 0%, #0c1424 60%, #05080f 100%)",
+            ? "radial-gradient(circle,rgba(170,110,230,0.6),transparent 60%)"
+            : "radial-gradient(circle,rgba(220,235,255,0.7),transparent 60%)",
+          pointerEvents: "none",
+          zIndex: 80,
         }}
       />
+      {/* particle ambience reused from explore */}
+      <BattleParticles theme={battleTheme} />
       {/* vignette */}
       <div className="coer-vignette" style={{ position: "absolute", inset: 0 }} />
 
@@ -382,21 +468,52 @@ export function BattleScene({ enemyId, isBoss, onEnd }: BattleSceneProps) {
         ))}
       </div>
 
-      {/* Enemy */}
+      {/* Enemy (right side of the stage, upright) */}
       <div
         style={{
           position: "absolute",
-          top: "16%",
-          left: "50%",
-          transform: "translateX(-50%)",
+          bottom: "30%",
+          right: isBoss ? "16%" : "20%",
           textAlign: "center",
           zIndex: 72,
         }}
       >
+        {/* ground shadow */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            bottom: -6,
+            transform: "translateX(-50%)",
+            width: isBoss ? 130 : 92,
+            height: 18,
+            borderRadius: "50%",
+            background: "radial-gradient(ellipse,rgba(0,0,0,0.55),transparent 70%)",
+            filter: "blur(2px)",
+          }}
+        />
         <div className="relative">
           <div className={`${enemyHurt ? "opacity-60" : ""} ${enemy.shattered ? "coer-shake" : "coer-bob"}`}>
             <Sprite kind={enemy.def.spriteKind} size={isBoss ? 168 : 120} />
           </div>
+          {/* slash arc on hit */}
+          {slashFx > 0 && (
+            <div
+              key={`slash-${slashFx}`}
+              className="coer-slash"
+              style={{
+                position: "absolute",
+                left: "10%",
+                top: "20%",
+                width: "80%",
+                height: "60%",
+                background:
+                  "linear-gradient(120deg,transparent 40%,rgba(255,250,230,0.95) 50%,transparent 60%)",
+                filter: "drop-shadow(0 0 8px rgba(255,235,180,0.9))",
+                pointerEvents: "none",
+              }}
+            />
+          )}
           {shatterFx > 0 && (
             <div
               key={`sf-${shatterFx}`}
@@ -480,17 +597,33 @@ export function BattleScene({ enemyId, isBoss, onEnd }: BattleSceneProps) {
         </div>
       </div>
 
-      {/* Player sprite */}
+      {/* Player sprite (left side of the stage, upright, faces enemy) */}
       <div
         style={{
           position: "absolute",
-          bottom: "26%",
-          left: "16%",
+          bottom: "30%",
+          left: "18%",
           zIndex: 71,
+          transform: playerLunge ? "translateX(40px)" : "translateX(0)",
+          transition: "transform 0.13s ease-out",
         }}
       >
+        {/* ground shadow */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            bottom: -6,
+            transform: "translateX(-50%)",
+            width: 80,
+            height: 16,
+            borderRadius: "50%",
+            background: "radial-gradient(ellipse,rgba(0,0,0,0.55),transparent 70%)",
+            filter: "blur(2px)",
+          }}
+        />
         <div className={`relative ${playerHurt ? "opacity-60" : "coer-breathe"}`}>
-          <Sprite kind="kael" size={104} facing="right" />
+          <Sprite kind="kael" size={132} facing="right" />
           {floats
             .filter((f) => f.side === "player")
             .map((f) => (
@@ -879,6 +1012,14 @@ function DefeatOverlay({ onChoice }: { onChoice: () => void }) {
           Return to safety
         </GoldButton>
       </Panel>
+    </div>
+  );
+}
+
+function BattleParticles({ theme }: { theme: "chapel" | "snow" | "town" | "shrine" }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 31 }}>
+      <Atmosphere theme={theme} />
     </div>
   );
 }
